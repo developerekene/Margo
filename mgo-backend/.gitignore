@@ -1,0 +1,10 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+firebase-service-account.json
+.pytest_cache/
+# Import Linter / Grimp caches
+.import_linter_cache/
+.grimp_cache/
