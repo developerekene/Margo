@@ -23,6 +23,14 @@ export type Session = {
   name: string;
 };
 
+export type ChatBody = {
+  text: string;
+};
+
+export type ChatReply = {
+  reply: string;
+};
+
 /* -------------------------------------------------------------------------- */
 /* Stand-ins for the backend                                                  */
 /* -------------------------------------------------------------------------- */
@@ -93,6 +101,19 @@ export const endpoints = {
     } satisfies Endpoint<SignInBody, Session>,
   },
 
-  // Add the next module here, e.g.
-  // chat: { send: { method: "POST", path: "/chat/messages", ... } },
+  chat: {
+    /** POST /api/v1/chat/messages */
+    sendMessage: {
+      method: "POST",
+      path: "/chat/messages",
+      mock: async (body: ChatBody): Promise<ChatReply> => {
+        await wait(700);
+        return {
+          reply: `You said: "${body.text}". Connect the API for real answers.`,
+        };
+      },
+    } satisfies Endpoint<ChatBody, ChatReply>,
+  },
+
+  // Add the next module here.
 };

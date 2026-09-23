@@ -1,9 +1,11 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
+const Home = lazy(() => import("./ui/pages/Home"));
 const Signup = lazy(() => import("./ui/pages/auth/Signup"));
 const Signin = lazy(() => import("./ui/pages/auth/SignIn"));
 const Dashboard = lazy(() => import("./ui/pages/dashboard/Dashboard"));
+const Chatbot = lazy(() => import("./ui/pages/Chatbot"));
 
 /**
  * Routes are lazily loaded, so each page ships in its own chunk.
@@ -14,9 +16,10 @@ function App() {
     <BrowserRouter>
       <Suspense fallback={<PageFallback />}>
         <Routes>
-          <Route path="/" element={<Signup />} />
+          <Route path="/" element={<Home />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/signin" element={<Signin />} />
+          <Route path="/chatbot" element={<Chatbot />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
