@@ -8,6 +8,8 @@ class Settings(BaseSettings):
 
     FIREBASE_PROJECT_ID: str = ""
     FIREBASE_CREDENTIALS_PATH: str = ""
+    FIREBASE_AUTH_EMULATOR_HOST: str = ""
+    FIRESTORE_EMULATOR_HOST: str = ""
 
     class Config:
         env_file = ".env"
