@@ -33,6 +33,88 @@ const STEPS = [
   },
 ];
 
+const FEATURES = [
+  {
+    icon: LuGlobe,
+    title: "Learn from your website",
+    text: "Margo can understand your existing website content and use it to answer customer questions accurately.",
+  },
+  {
+    icon: LuFileText,
+    title: "Upload your documents",
+    text: "Add PDFs, guides, FAQs, policies, product information, and other business documents to your knowledge base.",
+  },
+  {
+    icon: LuMessageCircle,
+    title: "Answer customers instantly",
+    text: "Give visitors useful answers around the clock without making them wait for someone from your team.",
+  },
+  {
+    icon: LuSparkles,
+    title: "Customize the experience",
+    text: "Choose your assistant's name, greeting, personality, and appearance to match your brand.",
+  },
+  {
+    icon: LuUpload,
+    title: "Easy to integrate",
+    text: "Copy a simple embed snippet and add Margo to your existing website without rebuilding your site.",
+  },
+  {
+    icon: LuCheck,
+    title: "Always improving",
+    text: "Update your knowledge base whenever your business changes so Margo stays aligned with your latest information.",
+  },
+];
+
+const USE_CASES = [
+  {
+    title: "Customer Support",
+    description:
+      "Answer common questions instantly and reduce repetitive support requests.",
+    label: "Support teams",
+  },
+  {
+    title: "Education",
+    description:
+      "Help students and visitors find information from courses, resources, policies, and documents.",
+    label: "Schools & educators",
+  },
+  {
+    title: "Businesses",
+    description:
+      "Turn your website into a helpful assistant that understands your products and services.",
+    label: "Growing businesses",
+  },
+];
+
+const FAQS = [
+  {
+    question: "What can I teach Margo?",
+    answer:
+      "You can teach Margo using your website and business documents such as PDFs, FAQs, guides, policies, product information, and other useful content.",
+  },
+  {
+    question: "Do I need to know how to code?",
+    answer:
+      "No. Margo is designed to be simple to set up. Once your assistant is ready, you can add it to your website using a simple embed code.",
+  },
+  {
+    question: "Can I customize my assistant?",
+    answer:
+      "Yes. You can customize your assistant's name, greeting, personality, and appearance so it fits naturally with your website and brand.",
+  },
+  {
+    question: "Can Margo answer questions 24/7?",
+    answer:
+      "Yes. Once deployed, Margo can respond to visitors at any time using the knowledge you have provided.",
+  },
+  {
+    question: "Do I need a credit card to get started?",
+    answer:
+      "No. You can get started without entering a credit card.",
+  },
+];
+
 const BENEFITS = [
   "Train on your own content",
   "Answers available 24/7",
@@ -334,6 +416,168 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+
+      {/* =========================================================
+      FEATURES
+      ========================================================= */}
+      <section className="bg-white">
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 sm:py-20 lg:px-10 lg:py-24">
+          <div className="grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-start lg:gap-20">
+            {/* Heading */}
+            <div className="lg:sticky lg:top-24">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-500">
+                Everything you need
+              </span>
+
+              <h2 className="mt-3 text-[30px] font-semibold leading-tight tracking-[-0.035em] text-ink-950 sm:text-[40px]">
+                A smarter way to help your visitors
+              </h2>
+
+              <p className="mt-5 max-w-md text-sm leading-7 text-ink-500 sm:text-[15px]">
+                Margo combines your existing business knowledge with AI to create
+                a helpful assistant that is available whenever your customers need
+                it.
+              </p>
+
+              <Link
+                to="/signup"
+                className="group mt-7 inline-flex items-center gap-2 text-sm font-semibold text-brand-500 transition-colors hover:text-brand-600"
+              >
+                Build your assistant
+                <LuArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </div>
+
+            {/* Feature grid */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {FEATURES.map((feature) => {
+                const Icon = feature.icon;
+
+                return (
+                  <div
+                    key={feature.title}
+                    className="group rounded-2xl border border-line bg-white p-6 transition-all duration-200 hover:-translate-y-1 hover:border-brand-200 hover:shadow-[0_20px_50px_-25px_rgba(15,23,42,0.3)]"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-500 transition-colors group-hover:bg-brand-500 group-hover:text-white">
+                      <Icon className="h-5 w-5" />
+                    </div>
+
+                    <h3 className="mt-5 text-[15px] font-semibold text-ink-900">
+                      {feature.title}
+                    </h3>
+
+                    <p className="mt-2 text-[13px] leading-6 text-ink-500">
+                      {feature.text}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================
+    USE CASES
+========================================================= */}
+      <section className="border-y border-line bg-slate-50/70">
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 sm:py-20 lg:px-10 lg:py-24">
+          <div className="mx-auto max-w-2xl text-center">
+            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-500">
+              Built for your business
+            </span>
+
+            <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.035em] text-ink-950 sm:text-[40px]">
+              One assistant. Many possibilities.
+            </h2>
+
+            <p className="mt-4 text-sm leading-7 text-ink-500 sm:text-[15px]">
+              Whether you're answering customers, helping students, or explaining
+              your products, Margo can work with the information your organization
+              already has.
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
+            {USE_CASES.map((item, index) => (
+              <div
+                key={item.title}
+                className="group relative overflow-hidden rounded-2xl border border-line bg-white p-7 transition-all duration-200 hover:-translate-y-1 hover:border-brand-200 hover:shadow-[0_25px_60px_-30px_rgba(15,23,42,0.35)]"
+              >
+                {/* Decorative number */}
+                <span className="absolute right-5 top-4 text-5xl font-bold tracking-[-0.06em] text-slate-100 transition-colors group-hover:text-brand-50">
+                  0{index + 1}
+                </span>
+
+                <div className="relative">
+                  <span className="inline-flex rounded-full bg-brand-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-brand-600">
+                    {item.label}
+                  </span>
+
+                  <h3 className="mt-6 text-xl font-semibold tracking-tight text-ink-900">
+                    {item.title}
+                  </h3>
+
+                  <p className="mt-3 text-[13.5px] leading-6 text-ink-500">
+                    {item.description}
+                  </p>
+
+                  <div className="mt-7 flex items-center gap-2 text-xs font-semibold text-brand-500">
+                    Explore Margo
+                    <LuArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================
+    FAQ
+========================================================= */}
+      <section className="bg-white">
+        <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 sm:py-20 lg:py-24">
+          <div className="text-center">
+            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-500">
+              FAQ
+            </span>
+
+            <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.035em] text-ink-950 sm:text-[40px]">
+              Questions, answered.
+            </h2>
+
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-ink-500 sm:text-[15px]">
+              Everything you need to know about getting started with Margo.
+            </p>
+          </div>
+
+          <div className="mt-10 divide-y divide-line rounded-2xl border border-line bg-white">
+            {FAQS.map((faq) => (
+              <details
+                key={faq.question}
+                className="group px-5 sm:px-7"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-left text-[14px] font-semibold text-ink-900 [&::-webkit-details-marker]:hidden">
+                  <span>{faq.question}</span>
+
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-50 text-ink-500 transition-all group-open:rotate-45 group-open:bg-brand-50 group-open:text-brand-500">
+                    <span className="text-lg font-normal leading-none">
+                      +
+                    </span>
+                  </span>
+                </summary>
+
+                <div className="max-w-2xl pb-5 pr-10 text-[13px] leading-6 text-ink-500">
+                  {faq.answer}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
 
       {/* =========================================================
           CTA
