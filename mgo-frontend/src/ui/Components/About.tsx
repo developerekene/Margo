@@ -5,6 +5,8 @@ import {
   LuShieldCheck,
   LuSparkles,
 } from "react-icons/lu";
+import { Navbar } from "./Navbar";
+import { Footer } from "./Footer";
 
 const features = [
   {
@@ -33,7 +35,8 @@ export default function AboutUs() {
   return (
     <main>
       {/* Hero */}
-      <section id="about" className=" px-5 py-12 sm:px-8 lg:px-16">
+      <section className=" px-5 py-12 sm:px-8 lg:px-16">
+        <Navbar />
         <div className="mx-auto max-w-6xl text-center">
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-500">
             About Margo
@@ -122,6 +125,7 @@ export default function AboutUs() {
           </div>
         </div>
       </section>
+      <Footer />
     </main>
   );
 }

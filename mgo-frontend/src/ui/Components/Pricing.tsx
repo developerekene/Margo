@@ -1,5 +1,7 @@
 import { LuCheck, LuMinus } from "react-icons/lu";
 import { Link } from "react-router-dom";
+import { Navbar } from "./Navbar";
+import { Footer } from "./Footer";
 
 const plans = [
   {
@@ -80,8 +82,9 @@ const featureNames = Object.keys(plans[0].features);
 
 export default function Pricing() {
   return (
-    <section id="pricing" className="bg-white px-4 py-16 sm:px-6 lg:px-8">
+    <section className="bg-white px-4 py-16 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
+        <Navbar />
         {/* Heading */}
         <div className="mx-auto mb-12 max-w-2xl text-center">
           <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">
@@ -181,6 +184,7 @@ export default function Pricing() {
           ))}
         </div>
       </div>
+      <Footer />
     </section>
   );
 }

@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { MargoLogo } from "./MargoLogo";
 
 const LINKS = [
-  { label: "About Us", href: "/about" },
+  { label: "About Us", href: "/about-us" },
   { label: "Pricing", href: "/pricing" },
   { label: "Contact Us", href: "/contact-us" },
 ];
