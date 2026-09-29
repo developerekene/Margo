@@ -5,9 +5,9 @@ import { Link } from "react-router-dom";
 import { MargoLogo } from "./MargoLogo";
 
 const LINKS = [
-  { label: "About Us", href: "/#about" },
-  { label: "Pricing", href: "/#pricing" },
-  { label: "Blog", href: "/#blog" },
+  { label: "About Us", href: "/about" },
+  { label: "Pricing", href: "/pricing" },
+  { label: "Contact Us", href: "/contact-us" },
 ];
 
 /** Floating pill navigation — glass bar on desktop, sheet on mobile. */

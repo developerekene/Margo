@@ -1,9 +1,9 @@
 import {
-  LuBot,
   LuBrain,
   LuGlobe,
   LuMessageCircle,
   LuShieldCheck,
+  LuSparkles,
 } from "react-icons/lu";
 
 const features = [
@@ -33,9 +33,9 @@ export default function AboutUs() {
   return (
     <main>
       {/* Hero */}
-      <section id="about" className=" px-5 py-20 sm:px-8 lg:px-16">
+      <section id="about" className=" px-5 py-12 sm:px-8 lg:px-16">
         <div className="mx-auto max-w-6xl text-center">
-          <span className="inline-flex items-center gap-2 rounded-full bg-[#0a756c]/10 px-4 py-2 text-sm font-medium text-[#0a756c]">
+          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-500">
             About Margo
           </span>
 
@@ -75,7 +75,7 @@ export default function AboutUs() {
           {/* Visual */}
           <div className="rounded-3xl bg-[#0a756c] p-8 shadow-xl sm:p-10">
             <div className="rounded-2xl bg-white p-6">
-              <LuBot className="text-[#0a756c]" size={42} />
+              <LuSparkles className="text-[#0a756c]" size={42} />
 
               <h3 className="mt-6 text-xl font-bold text-slate-900">
                 Your business knowledge
@@ -108,9 +108,9 @@ export default function AboutUs() {
             {features.map(({ icon: Icon, title, text }) => (
               <div
                 key={title}
-                className="rounded-2xl border border-slate-200 bg-white p-6"
+                className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-brand-200 hover:shadow-[0_20px_50px_-25px_rgba(15,23,42,0.3)]"
               >
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ffeacf] text-[#0a756c]">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-500 transition-colors group-hover:bg-brand-500 group-hover:text-white">
                   <Icon size={22} />
                 </div>
 

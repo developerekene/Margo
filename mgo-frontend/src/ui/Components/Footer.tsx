@@ -57,7 +57,7 @@ export function Footer() {
 
       <div className="border-t border-line">
         <p className="mx-auto max-w-6xl px-5 py-5 text-[12px] text-ink-400 sm:px-8">
-          © {new Date().getFullYear()} Margo. All rights reserved.
+          © {new Date().getFullYear()} Margo. All rights reserved. v0.0.4
         </p>
       </div>
     </footer>
