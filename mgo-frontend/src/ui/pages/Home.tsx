@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 
 import { Footer } from "../Components/Footer";
 import { Navbar } from "../Components/Navbar";
+import Pricing from "../Components/Pricing";
+import AboutUs from "../Components/About";
 
 const STEPS = [
   {
@@ -27,7 +29,7 @@ export default function Home() {
       <Navbar />
 
       {/* Hero */}
-      <section className="relative overflow-hidden px-5 pt-32 pb-20 sm:px-8 sm:pt-40">
+      <section className="relative overflow-hidden px-5 pt-32 pb-0 sm:px-8 sm:pt-40">
         {/* Abstract background */}
         <img
           src="/margo_hero_background.svg"
@@ -38,7 +40,7 @@ export default function Home() {
         />
 
         <div className="relative mx-auto max-w-3xl text-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-white/70 px-3.5 py-1.5 text-[12.5px] font-medium text-ink-500 backdrop-blur-md">
+          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-secondary px-3.5 py-1.5 text-[12.5px] font-medium text-brand-700">
             <LuSparkles className="h-3.5 w-3.5 text-brand-500" />
             New · Train Margo on your own documents
           </span>
@@ -64,10 +66,23 @@ export default function Home() {
             </Link>
           </div>
         </div>
+
+        {/* Product screenshot — hidden on mobile, flush with the section's bottom edge */}
+
+        <div className="relative mx-auto mt-14 hidden h-[60vh] items-center justify-center border-b-0 sm:-mx-8 md:flex">
+          <img
+            src="/images/Screenshot.png"
+            alt="Margo AI chatbot dashboard preview"
+            decoding="async"
+            className="m-0 block max-h-full w-[70vw] border-8 rounded-tr-4xl  rounded-tl-4xl border-b-0 border-brand-400 p-0 select-none"
+          />
+        </div>
       </section>
 
+      <AboutUs />
+
       {/* How it works */}
-      <section id="about" className="border-y border-line bg-slate-50">
+      <section className="border-y border-line bg-slate-50">
         <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8">
           <h2 className="text-center text-[28px] font-semibold tracking-tight text-ink-900">
             How it works
@@ -94,24 +109,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section id="pricing" className="mx-auto max-w-3xl px-5 py-16 sm:px-8">
-        <div className="text-center">
-          <h2 className="text-[28px] leading-tight font-semibold tracking-tight text-ink-900">
-            Ready to give your website an AI assistant?
-          </h2>
-          <p className="mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-ink-500">
-            Start free, train Margo on your own content, and embed your
-            assistant today. No credit card required.
-          </p>
-          <Link
-            to="/signup"
-            className="mt-8 inline-block rounded-lg bg-brand-500 px-6 py-3 text-[14px] font-semibold text-white transition-colors hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-          >
-            Get Started
-          </Link>
-        </div>
-      </section>
+      <Pricing />
 
       <Footer />
     </div>
