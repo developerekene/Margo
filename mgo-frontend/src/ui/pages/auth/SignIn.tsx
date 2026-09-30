@@ -2,9 +2,11 @@ import { useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { ApiError, continueWithGoogle, signIn } from "../../../api/auth";
+import { ApiError, continueWithGoogle } from "../../../api/auth";
 import { AuthLayout } from "../../Components/AuthLayout";
 import { FormAlert } from "../../Components/FormAlert";
+import { useDispatch } from "react-redux";
+import { signin } from "../../../Redux/Slices/authslic";
 import {
   EyeIcon,
   EyeOffIcon,
@@ -41,6 +43,7 @@ function validate(values: FormValues) {
 }
 
 export default function SignIn() {
+  const dispatch = useDispatch();
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>(
     {},
@@ -71,7 +74,14 @@ export default function SignIn() {
       if (method === "google") {
         await continueWithGoogle();
       } else {
-        await signIn({ email: values.email.trim(), password: values.password });
+        const signinData = {
+          email: values.email.trim(),
+          password: values.password,
+        };
+
+        console.log("Signin data:", signinData);
+
+        dispatch(signin({ email: signinData.email }));
       }
       navigate("/dashboard");
     } catch (error) {

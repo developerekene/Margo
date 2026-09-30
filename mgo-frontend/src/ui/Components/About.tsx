@@ -33,10 +33,9 @@ const features = [
 
 export default function AboutUs() {
   return (
-    <main>
-      {/* Hero */}
-      <section className=" px-5 py-12 sm:px-8 lg:px-16">
-        <Navbar />
+    <main className="min-h-screen bg-slate-50/70">
+      <Navbar />
+      <section className=" px-4 py-28 sm:px-6 lg:px-10">
         <div className="mx-auto max-w-6xl text-center">
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-500">
             About Margo
@@ -54,7 +53,7 @@ export default function AboutUs() {
       </section>
 
       {/* What we do */}
-      <section className="px-2 py-20 sm:px-4 lg:px-12">
+      <section className="px-2 py-12 sm:px-4 lg:px-12">
         <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2">
           <div>
             <p className="font-semibold text-[#0a756c]">What Margo does</p>

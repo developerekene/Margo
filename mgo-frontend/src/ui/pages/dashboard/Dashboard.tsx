@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-import { clearSession, readSession } from "../../../api/auth";
+import { useDispatch, useSelector } from "react-redux";
+import type { RootState } from "../../../Redux/Store";
+import { logout } from "../../../Redux/Slices/authslic";
 
 import { MargoLogo } from "../../Components/MargoLogo";
 import { useNavigate } from "react-router-dom";
@@ -12,19 +14,25 @@ const STATS = [
 ];
 
 export default function Dashboard() {
-  const [session] = useState(readSession);
+  const dispatch = useDispatch();
   const navigate = useNavigate();
 
+  const user = useSelector((state: RootState) => state.auth.user);
+  const isAuthenticated = useSelector(
+    (state: RootState) => state.auth.isAuthenticated,
+  );
+
   useEffect(() => {
-    if (!session) navigate("/signin");
-  }, [session, navigate]);
+    if (!isAuthenticated || !user) {
+      navigate("/signin");
+    }
+  }, [isAuthenticated, user, navigate]);
 
   function signOut() {
-    clearSession();
+    dispatch(logout());
     navigate("/signin");
   }
-
-  if (!session) return null;
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-white">
@@ -32,7 +40,7 @@ export default function Dashboard() {
         <MargoLogo />
         <div className="flex items-center gap-4">
           <span className="hidden text-[13px] text-ink-500 sm:block">
-            {session.email}
+            {user?.email}
           </span>
           <button
             type="button"
@@ -46,7 +54,7 @@ export default function Dashboard() {
 
       <main className="mx-auto max-w-3xl px-5 py-12 sm:px-8">
         <h1 className="text-[26px] font-semibold tracking-tight text-ink-900">
-          Welcome, {session.name}
+          Welcome, {user?.adminName}
         </h1>
         <p className="mt-2 text-[14px] text-ink-500">
           Your Margo workspace is ready. Connect a knowledge source to launch
