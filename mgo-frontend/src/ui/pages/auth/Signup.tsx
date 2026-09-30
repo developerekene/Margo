@@ -1,7 +1,10 @@
 import { useId, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
-import { ApiError, signUp } from "../../../api/auth";
+import { useDispatch } from "react-redux";
+import { signup } from "../../../Redux/Slices/authslic";
+
+import { ApiError } from "../../../api/auth";
 import { useNavigate } from "react-router-dom";
 import { AuthLayout } from "../../Components/AuthLayout";
 import { FormAlert } from "../../Components/FormAlert";
@@ -163,6 +166,7 @@ function validate(values: FormValues, agreedToTerms: boolean): FormErrors {
 }
 
 export default function Signup() {
+  const dispatch = useDispatch();
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<FieldKey, boolean>>>(
@@ -199,13 +203,16 @@ export default function Signup() {
     setFormError(null);
 
     try {
-      await signUp({
+      const signupData = {
         adminName: values["admin name"].trim(),
         companyName: values["company name"].trim(),
         websiteUrl: values["website url"].trim(),
         email: values.email.trim(),
         password: values.password,
-      });
+      };
+      console.log("Signup data:", signupData);
+      dispatch(signup(signupData));
+
       navigate("/signin");
     } catch (error) {
       setFormError(

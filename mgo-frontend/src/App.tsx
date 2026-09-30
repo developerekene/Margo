@@ -4,6 +4,9 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 const Home = lazy(() => import("./ui/pages/Home"));
 const Signup = lazy(() => import("./ui/pages/auth/Signup"));
 const Signin = lazy(() => import("./ui/pages/auth/SignIn"));
+const Pricing = lazy(() => import("./ui/Components/Pricing"));
+const AboutUs = lazy(() => import("./ui/Components/About"));
+const ContactUs = lazy(() => import("./ui/pages/ContactUspage"));
 const Dashboard = lazy(() => import("./ui/pages/dashboard/Dashboard"));
 const Chatbot = lazy(() => import("./ui/pages/Chatbot"));
 
@@ -19,6 +22,9 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/signin" element={<Signin />} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/about-us" element={<AboutUs />} />
+          <Route path="/contact-us" element={<ContactUs />} />
           <Route path="/chatbot" element={<Chatbot />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="*" element={<Navigate to="/" replace />} />

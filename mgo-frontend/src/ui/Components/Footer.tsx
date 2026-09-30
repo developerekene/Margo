@@ -13,7 +13,7 @@ type FooterLink = {
 const LINKS: FooterLink[] = [
   { label: "Features", href: "/#features" },
   { label: "How It Works", href: "/#how" },
-  { label: "Pricing", href: "/#pricing" },
+  { label: "Pricing", href: "/pricing" },
   { label: "Sign In", to: "/signin" },
   { label: "Get Started", to: "/signup" },
 ];
@@ -57,7 +57,7 @@ export function Footer() {
 
       <div className="border-t border-line">
         <p className="mx-auto max-w-6xl px-5 py-5 text-[12px] text-ink-400 sm:px-8">
-          © {new Date().getFullYear()} Margo. All rights reserved.
+          © {new Date().getFullYear()} Margo. All rights reserved. v0.0.4
         </p>
       </div>
     </footer>
