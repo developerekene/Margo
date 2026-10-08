@@ -8,6 +8,7 @@ const Pricing = lazy(() => import("./ui/Components/Pricing"));
 const AboutUs = lazy(() => import("./ui/Components/About"));
 const ContactUs = lazy(() => import("./ui/pages/ContactUspage"));
 const Dashboard = lazy(() => import("./ui/pages/dashboard/Dashboard"));
+const Chatbotembed = lazy(() => import("./ui/pages/Chatbotembed"));
 const Chatbot = lazy(() => import("./ui/pages/Chatbot"));
 
 /**
@@ -27,6 +28,8 @@ function App() {
           <Route path="/contact-us" element={<ContactUs />} />
           <Route path="/chatbot" element={<Chatbot />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/:section" element={<Dashboard />} />
+          <Route path="/embed/chatbot" element={<Chatbotembed />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
