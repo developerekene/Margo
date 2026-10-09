@@ -24,8 +24,8 @@ export type ChatbotConfig = {
   userAvatar: string;
   botColor: string;
   userColor: string;
+  /** Drives the widget shell — header, transcript and composer. */
   backgroundColor: string;
-  headerColor: string;
   accentColor: string;
   welcomeMessage: string;
   placeholder: string;
@@ -44,12 +44,35 @@ export const chatbotConfig: ChatbotConfig = {
   botColor: "#f0faf8",
   userColor: "#0a756c",
   backgroundColor: "#ffffff",
-  headerColor: "#ffffff",
   accentColor: "#0a756c",
-  welcomeMessage:
-    "Hi! I'm the Margo assistant. Ask me anything about acme.com.",
-  placeholder: "Ask about pricing, docs or setup…",
+  welcomeMessage: "Hi! I'm the Margo assistant. Ask me anything about Margo.",
+  placeholder: "Ask about Margo...",
 };
+
+/**
+ * Black or white text for a bubble background, chosen from its luminance, so a
+ * custom accent or message colour stays readable.
+ */
+export function readableTextOn(background: string): string {
+  const hex = background.trim().replace("#", "");
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((digit) => digit + digit)
+          .join("")
+      : hex;
+
+  if (!/^[0-9a-f]{6}$/i.test(full)) return "#1f2933";
+
+  const [red, green, blue] = [0, 2, 4].map((offset) =>
+    parseInt(full.slice(offset, offset + 2), 16),
+  );
+
+  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+
+  return luminance > 0.6 ? "#1f2933" : "#ffffff";
+}
 
 /** The conversation the widget opens with. */
 export const initialMessages: ChatMessage[] = [
