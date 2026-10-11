@@ -1,5 +1,3 @@
-from typing import List
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,7 +11,7 @@ class Settings(BaseSettings):
     ENV: str = "development"
 
     # Allowed frontend origins; must be configured in the environment.
-    ALLOWED_ORIGINS: List[str]
+    ALLOWED_ORIGINS: list[str]
 
     # Firebase project ID used to initialize the Admin SDK.
     FIREBASE_PROJECT_ID: str = ""
@@ -26,6 +24,9 @@ class Settings(BaseSettings):
 
     # Cloud Firestore emulator host for local testing.
     FIRESTORE_EMULATOR_HOST: str = ""
+
+    # Firebase Web Api
+    FIREBASE_WEB_API_KEY: str = ""
 
 
 # Instantiate settings once for application-wide use.
