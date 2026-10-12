@@ -8,3 +8,6 @@ firebase-service-account.json
 # Import Linter / Grimp caches
 .import_linter_cache/
 .grimp_cache/
+.agents/
+.local-context/
+.ruff_cache

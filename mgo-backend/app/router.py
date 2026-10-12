@@ -1,13 +1,13 @@
 from fastapi import APIRouter
 
-from app.modules.identity.api import router as identity_router
-from app.modules.billing.api import router as billing_router
-from app.modules.knowledge.api import router as knowledge_router
-from app.modules.embedding.api import router as embedding_router
-from app.modules.retrieval.api import router as retrieval_router
 from app.modules.agent.api import router as agent_router
+from app.modules.billing.api import router as billing_router
 from app.modules.chat.api import router as chat_router
+from app.modules.embedding.api import router as embedding_router
+from app.modules.identity.api import router as identity_router
+from app.modules.knowledge.api import router as knowledge_router
 from app.modules.platform.api import router as platform_router
+from app.modules.retrieval.api import router as retrieval_router
 
 api_router = APIRouter()
 

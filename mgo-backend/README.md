@@ -324,99 +324,333 @@ Example:
 
 ---
 
-# 11. Identity API
+# 11. Identity API ✅ Live (BE-003)
 
-Identity manages:
+Identity manages tenant registration, users, roles, invitations, widget domains,
+and platform administrators. All endpoints below are implemented and tested.
 
-- tenant registration
-- users
-- roles
-- permissions
-- invitations
-- widget domains
-- platform administrators
+## Roles
 
-## Endpoints
+| Role | Scope |
+|---|---|
+| `platform_admin` | Cross-tenant super-admin |
+| `company_owner` | Created at registration; manages admins + members |
+| `company_admin` | Manages members; invited by owner/admin |
+| `company_member` | Invited by owner/admin |
 
-### Register Tenant
+> Tokens with no `role` claim are rejected with `403 permission_denied` everywhere.
 
-```http
-POST /api/v1/identity/register
+## Firestore Data Model
+
+```text
+tenants/{tenant_id}
+  name, admin_email, website_url, status, widget_id, created_at
+
+tenants/{tenant_id}/members/{uid}
+  uid, email, name, role, status ("active" | "invited"),
+  invited_by, created_at
+
+widgets/{widget_id}
+  tenant_id, allowed_domains[]
 ```
 
-Creates a tenant and its initial owner.
+`widget_id` = `wgt_` + 12 hex chars, generated at registration.
+Older tenants receive a widget lazily on their first widget-domain access.
 
-The operation publishes the `TenantRegistered` event.
+---
 
-### Login
+### POST /api/v1/identity/register
 
-```http
-POST /api/v1/identity/login
+Create a tenant and owner. No auth required.
+
+```json
+// Request
+{
+  "company_name": "Acme Systems",
+  "company_email": "admin@acme.example",
+  "admin_name": "Alex Admin",
+  "password": "securepassword123",
+  "website_url": "https://acme.example"
+}
 ```
 
-Authentication/login behavior must follow the final backend authentication implementation.
+`website_url` is optional. The `role` field does not exist on this schema —
+the service always sets `company_owner`, never reading one from the request.
 
-### Get Current User
-
-```http
-GET /api/v1/identity/me
+```json
+// Response 200
+{
+  "data": {
+    "token": "<firebase_id_token>",
+    "uid": "firebase_uid",
+    "role": "company_owner",
+    "tenant_id": "acme-systems-a1b2c3",
+    "email": "admin@acme.example"
+  },
+  "error": null
+}
 ```
 
-Requires authentication.
+| Error code | HTTP | Meaning |
+|---|---|---|
+| `email_already_registered` | 409 | Email already in Firebase Auth |
+| `registration_failed` | 500 | Post-user step failed; Auth user deleted (no orphan) |
 
-### List Tenant Users
+---
 
-```http
-GET /api/v1/identity/{tenant_id}/users
+### POST /api/v1/identity/login
+
+Email + password login. No auth required.
+
+```json
+// Request
+{ "email": "admin@acme.example", "password": "securepassword123" }
 ```
 
-Allowed for:
-
-- tenant owner
-- tenant admin
-- platform admin
-
-### Invite User
-
-```http
-POST /api/v1/identity/{tenant_id}/users/invite
+```json
+// Response 200
+{
+  "data": {
+    "token": "<firebase_id_token>",
+    "uid": "firebase_uid",
+    "role": "company_owner",
+    "tenant_id": "acme-systems-a1b2c3",
+    "email": "admin@acme.example"
+  },
+  "error": null
+}
 ```
 
-Tenant owner/admin can invite users and assign supported roles.
+Firebase error codes are **never** returned to the caller — only logged server-side.
 
-### Remove User
+| Error code | HTTP | Meaning |
+|---|---|---|
+| `invalid_credentials` | 401 | Wrong email or password |
+| `too_many_attempts` | 429 | Firebase rate limit (`TOO_MANY_ATTEMPTS_TRY_LATER`) |
+| `subscription_inactive` | 403 | Tenant not active |
+| `permission_denied` | 403 | Token has no `role` claim |
 
-```http
-DELETE /api/v1/identity/{tenant_id}/users/{user_id}
+An invited member's status is flipped to `"active"` on their first successful login.
+
+---
+
+### POST /api/v1/identity/forgot-password
+
+Request a password-reset email. No authentication required.
+
+**Request**
+
+```json
+{
+  "email": "admin@acme.example"
+}
 ```
 
-### List Widget Domains
+**Response 200**
 
-```http
-GET /api/v1/identity/{tenant_id}/widget-domains
+```json
+{
+  "data": {
+    "message": "If an account exists for this email, a password reset link has been sent."
+  },
+  "error": null
+}
 ```
 
-### Register Widget Domain
+The response is intentionally generic so the endpoint does not disclose whether an email address has an account. The frontend should display the returned message without revealing account-existence information.
 
-```http
-POST /api/v1/identity/{tenant_id}/widget-domains
+**Frontend behavior**
+- Provide a forgot-password form that accepts an email address.
+- Submit the email to this endpoint.
+- Display the same generic confirmation for existing and non-existing accounts.
+- Handle validation errors and unexpected server errors appropriately.
+
+
+### GET /api/v1/identity/me
+
+Returns the caller's profile. Requires `Authorization: Bearer <token>`.
+
+```json
+// Response 200
+{
+  "data": {
+    "uid": "firebase_uid",
+    "email": "admin@acme.example",
+    "role": "company_owner",
+    "tenant_id": "acme-systems-a1b2c3"
+  },
+  "error": null
+}
 ```
 
-### List Tenants
+---
 
-```http
-GET /api/v1/identity/tenants
+### GET /api/v1/identity/{tenant_id}/users
+
+Paginated member list. Auth: owner/admin of own tenant, or platform_admin.
+
+`?limit=20&cursor=<opaque>` (max limit 100)
+
+```json
+// Response 200
+{
+  "data": {
+    "users": [{
+      "uid": "uid1", "email": "u@acme.example", "name": "User",
+      "role": "company_admin", "status": "active",
+      "invited_by": "owner-uid", "created_at": "2026-01-01T00:00:00+00:00"
+    }],
+    "next_cursor": null
+  },
+  "error": null
+}
 ```
 
-Platform-admin only.
+---
 
-### Create Platform Admin
+### POST /api/v1/identity/{tenant_id}/users/invite
 
-```http
-POST /api/v1/identity/platform-admins
+Invite a user. Auth: owner/admin of own tenant.
+
+```json
+// Request
+{ "email": "new@acme.example", "name": "New User", "role": "company_member" }
 ```
 
-Platform-admin only.
+`role` must be `"company_admin"` or `"company_member"` — `"platform_admin"` is
+rejected by schema. `tenant_id` is always read from the **path**, never the body.
+A Firebase set-password email is sent to the invitee automatically.
+
+```json
+// Response 200
+{ "data": { "status": "invited", "email": "new@acme.example" }, "error": null }
+```
+
+| Error code | HTTP | Meaning |
+|---|---|---|
+| `email_already_registered` | 409 | Email exists (tenant not revealed) |
+| `invite_failed` | 500 | Post-user step failed; Auth user deleted |
+
+---
+
+### GET /api/v1/identity/{tenant_id}/users/invite
+
+Members with `status: "invited"`. Auth: owner/admin of own tenant. Paginated.
+
+```json
+// Response 200
+{ "data": { "invites": [...], "next_cursor": null }, "error": null }
+```
+
+---
+
+### DELETE /api/v1/identity/{tenant_id}/users/{user_id}
+
+Remove a member. Auth: owner/admin of own tenant.
+
+Removal matrix:
+
+| Caller role | Can remove |
+|---|---|
+| `company_owner` | `company_admin`, `company_member` |
+| `company_admin` | `company_member` only |
+
+On success: member doc deleted, refresh tokens revoked, Auth user deleted
+(email freed for re-invite).
+
+```json
+// Response 200
+{ "data": { "status": "removed" }, "error": null }
+```
+
+| Error code | HTTP | Meaning |
+|---|---|---|
+| `cannot_remove_self` | 400 | Caller is the target |
+| `cannot_remove_owner` | 403 | Owner cannot be removed |
+| `permission_denied` | 403 | Role insufficient |
+| `user_not_found` | 404 | Target not in this tenant |
+
+---
+
+### GET /api/v1/identity/{tenant_id}/widget-domains
+
+List allowed domains. Auth: owner/admin of own tenant.
+
+```json
+// Response 200
+{ "data": { "domains": ["acme.example", "localhost"] }, "error": null }
+```
+
+---
+
+### POST /api/v1/identity/{tenant_id}/widget-domains
+
+Add a domain. Auth: owner/admin of own tenant.
+
+```json
+// Request — scheme, port, and path are stripped automatically
+{ "domain": "https://acme.example:8080/any/path" }
+// Stored as: "acme.example"
+```
+
+Rules: `"localhost"` allowed; wildcards (`*`) rejected; deduplication applied; max 20 per tenant.
+
+```json
+// Response 200
+{ "data": { "domains": ["acme.example"] }, "error": null }
+```
+
+| Error code | HTTP | Meaning |
+|---|---|---|
+| `wildcard_not_allowed` | 400 | Domain contains `*` |
+| `domain_limit_reached` | 400 | Already at 20 domains |
+
+---
+
+### GET /api/v1/identity/tenants
+
+All tenants, paginated. Auth: platform_admin only.
+
+`?limit=20&cursor=<opaque>` (max 100)
+
+```json
+// Response 200
+{
+  "data": {
+    "tenants": [{
+      "tenant_id": "acme-systems-a1b2c3", "name": "Acme Systems",
+      "admin_email": "admin@acme.example", "status": "active",
+      "created_at": "2026-01-01T00:00:00+00:00"
+    }],
+    "next_cursor": null
+  },
+  "error": null
+}
+```
+
+---
+
+### POST /api/v1/identity/platform-admins
+
+Create a platform admin. Auth: platform_admin only. Sends set-password email.
+
+```json
+// Request
+{ "email": "newadmin@platform.example", "name": "Platform Admin" }
+// Response 200
+{ "data": { "uid": "firebase_uid", "email": "newadmin@platform.example", "status": "invited" }, "error": null }
+```
+
+| Error code | HTTP | Meaning |
+|---|---|---|
+| `email_already_registered` | 409 | Email already exists |
+| `platform_admin_creation_failed` | 500 | Post-user step failed; Auth user deleted |
+
+> **Bootstrap:** To create the **first** platform admin, run:
+> ```bash
+> python scripts/bootstrap_platform_admin.py --email admin@platform.example
+> ```
+> This promotes an existing Firebase user. After the first admin exists, use this API endpoint instead.
 
 ---
 
@@ -1066,6 +1300,7 @@ Billing webhooks are exempt from normal user-facing rate limits.
 |---|---|---:|---|
 | Identity | `/identity/register` | POST | Register tenant |
 | Identity | `/identity/login` | POST | Login |
+| Identity | `/identity/forgot-password` | POST | Request password-reset email |
 | Identity | `/identity/me` | GET | Current user |
 | Identity | `/identity/{tenant_id}/users` | GET | List users |
 | Identity | `/identity/{tenant_id}/users/invite` | POST | Invite user |
