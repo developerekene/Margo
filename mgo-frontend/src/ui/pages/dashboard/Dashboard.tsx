@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
 
-import {
-  LuBell,
-  LuBookOpen,
-  LuBot,
-  LuCreditCard,
-  LuMessageSquare,
-} from "react-icons/lu";
+import { LuBell } from "react-icons/lu";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -18,6 +12,7 @@ import { Billing } from "../../Components/dashboard/Billing";
 import { Conversations } from "../../Components/dashboard/Conversations";
 import { Knowledge } from "../../Components/dashboard/Knowledge";
 import { DashboardNavbar } from "../../Components/dashboard/Navbar";
+import { Overview } from "../../Components/dashboard/Overview";
 import { Sidebar } from "../../Components/dashboard/Sidebar";
 import { Team } from "../../Components/dashboard/Team";
 import { Widget } from "../../Components/dashboard/Widget";
@@ -66,6 +61,7 @@ const HEADINGS: Record<string, { title: string; description: string }> = {
 
 /** Which body to render for each `/dashboard/:section` route. */
 const SECTION_BODIES: Record<string, ComponentType> = {
+  overview: Overview,
   agent: Agent,
   knowledge: Knowledge,
   widget: Widget,
@@ -73,33 +69,6 @@ const SECTION_BODIES: Record<string, ComponentType> = {
   team: Team,
   billing: Billing,
 };
-
-const STAT_CARDS = [
-  {
-    label: "Subscription",
-    value: "Free Trial",
-    hint: "14 days remaining",
-    icon: LuCreditCard,
-  },
-  {
-    label: "Knowledge sources",
-    value: "0",
-    hint: "Documents & website data",
-    icon: LuBookOpen,
-  },
-  {
-    label: "Conversations",
-    value: "0",
-    hint: "This month",
-    icon: LuMessageSquare,
-  },
-  {
-    label: "Assistant status",
-    value: "Not live",
-    hint: "Complete setup to launch",
-    icon: LuBot,
-  },
-];
 
 /** "Amina Bello" -> "AB" — falls back to the first two characters. */
 function getInitials(name: string) {
@@ -110,34 +79,6 @@ function getInitials(name: string) {
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase() ?? "")
       .join("") || name.slice(0, 2).toUpperCase()
-  );
-}
-
-/** Workspace at a glance. */
-function OverviewStats() {
-  return (
-    <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {STAT_CARDS.map((card) => (
-        <div
-          key={card.label}
-          className="rounded-xl border border-line bg-white p-4 shadow-soft"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] font-medium tracking-[0.06em] text-ink-400 uppercase">
-              {card.label}
-            </p>
-            <card.icon
-              className="h-4 w-4 shrink-0 text-ink-400"
-              aria-hidden="true"
-            />
-          </div>
-          <p className="mt-2.5 text-[20px] font-semibold tracking-tight text-ink-900">
-            {card.value}
-          </p>
-          <p className="mt-1 text-[12px] text-ink-400">{card.hint}</p>
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -164,7 +105,7 @@ export default function Dashboard() {
   const currentSection = SECTIONS[section ?? "overview"] ?? "Overview";
   const isOverview = !section || section === "overview";
   const page = HEADINGS[section ?? ""];
-  const Body = section ? SECTION_BODIES[section] : undefined;
+  const Body = SECTION_BODIES[section ?? "overview"];
   const heading = isOverview
     ? `Welcome back, ${user.adminName}`
     : (page?.title ?? currentSection);
@@ -242,8 +183,6 @@ export default function Dashboard() {
                 </span>
               </div>
             </header>
-
-            {isOverview ? <OverviewStats /> : null}
 
             {Body ? (
               <div className="mt-8">

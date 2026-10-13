@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { LuUpload } from "react-icons/lu";
 import { useDispatch, useSelector } from "react-redux";
@@ -187,6 +187,10 @@ export function Agent() {
   const greetingId = useId();
   const dispatch = useDispatch();
   const config = useSelector((state: RootState) => state.agent);
+
+  useEffect(() => {
+    localStorage.setItem("margo:agent:demo", JSON.stringify(config));
+  }, [config]);
 
   const [tone, setTone] = useState(TONES[0].id);
   const [saved, setSaved] = useState(false);
