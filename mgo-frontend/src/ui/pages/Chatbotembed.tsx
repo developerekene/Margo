@@ -1,7 +1,7 @@
 import { useLayoutEffect } from "react";
 import { useDispatch } from "react-redux";
 
-import { agentUpdated } from "../../Redux/Slices/agentslic";
+import { agentUpdated, loadAgents } from "../../Redux/Slices/agentslic";
 import { welcomeMessageChanged } from "../../Redux/Slices/chatslic";
 import Chatbot from "./Chatbot";
 import type { ChatbotConfig } from "./chatbotdata";
@@ -27,9 +27,12 @@ export default function Chatbotembed() {
     const chatbotId = new URLSearchParams(window.location.search).get(
       "chatbotId",
     );
-    if (chatbotId !== "demo") return;
+    if (!chatbotId) return;
 
-    const config = readSavedConfig();
+    // Each saved agent embeds its own id; "demo" keeps the legacy behaviour.
+    const agent = loadAgents().find((item) => item.id === chatbotId);
+    const config =
+      agent?.config ?? (chatbotId === "demo" ? readSavedConfig() : null);
     if (!config) return;
 
     dispatch(agentUpdated(config));

@@ -29,6 +29,11 @@ function App() {
           <Route path="/contact-us" element={<ContactUs />} />
           <Route path="/chatbot" element={<Chatbot />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/agent/new" element={<Dashboard />} />
+          <Route
+            path="/dashboard/agent/:agentId/edit"
+            element={<Dashboard />}
+          />
           <Route path="/dashboard/:section" element={<Dashboard />} />
           <Route path="/embed/chatbot" element={<Chatbotembed />} />
 
