@@ -35,7 +35,7 @@ export function Overview() {
 
   return (
     <div className="space-y-5">
-      <div className="bg-red-500">
+      <div className="">
         for margo staffs
         {/* Metrics — revenue card leads, the other four sit beside it and it onlt for the margo staffs */}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
@@ -49,7 +49,7 @@ export function Overview() {
         </div>
       </div>
 
-      <div className="bg-green-500">
+      <div className="">
         for company staffs
         {/* Metrics — revenue card leads, the other four sit beside it and it onlt for the margo staffs */}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
@@ -102,10 +102,7 @@ export function Overview() {
         </div>
       </section>
 
-
       {/* company table  */}
-
-
 
       <ConversationsSection />
 
