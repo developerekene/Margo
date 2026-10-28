@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import type { FormEvent } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 
 import { LuArrowLeft } from "react-icons/lu";
 import { useDispatch, useSelector } from "react-redux";
@@ -178,6 +178,7 @@ export function CustomizeChatBot() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const descriptionId = useId();
+  const avatarInputId = useId();
 
   const existing = useSelector((state: RootState) =>
     agentId
@@ -189,6 +190,7 @@ export function CustomizeChatBot() {
     existing ? toDraft(existing) : blankDraft(),
   );
   const [errors, setErrors] = useState<DraftErrors>({});
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   const isPublished = existing?.status === "published";
 
@@ -197,6 +199,36 @@ export function CustomizeChatBot() {
       ...current,
       config: { ...current.config, ...patch },
     }));
+  }
+
+  /** Read a picked image as a data URL so the avatar survives a reload. */
+  function handleAvatarUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Choose a PNG, JPG, WEBP or SVG image.");
+      return;
+    }
+
+    if (file.size > 1024 * 1024) {
+      setAvatarError("Keep the image under 1 MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        setAvatarError("Couldn’t read that image. Try another file.");
+        return;
+      }
+      setAvatarError(null);
+      updateConfig({ botAvatar: reader.result });
+    };
+    reader.onerror = () =>
+      setAvatarError("Couldn’t read that image. Try another file.");
+    reader.readAsDataURL(file);
   }
 
   function save(mode: "save" | "publish") {
@@ -478,19 +510,57 @@ export function CustomizeChatBot() {
                   })}
 
                   {!AVATARS.includes(draft.config.botAvatar) ? (
-                    <span
-                      title="Current uploaded logo"
-                      aria-label="Current uploaded logo"
-                      className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-brand-500 bg-brand-500/10"
-                    >
-                      <img
-                        src={draft.config.botAvatar}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
+                    <span className="relative">
+                      <span
+                        title="Uploaded image"
+                        aria-label="Uploaded image"
+                        className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-brand-500 bg-brand-500/10"
+                      >
+                        <img
+                          src={draft.config.botAvatar}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAvatarError(null);
+                          updateConfig({ botAvatar: AVATARS[0] });
+                        }}
+                        aria-label="Remove uploaded image"
+                        title="Remove uploaded image"
+                        className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-line bg-white text-[10px] leading-none text-ink-500 transition-colors hover:border-red-300 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-500"
+                      >
+                        ×
+                      </button>
                     </span>
                   ) : null}
+
+                  <label
+                    htmlFor={avatarInputId}
+                    className="flex h-9 cursor-pointer items-center rounded-lg border border-dashed border-line-strong px-3 text-[12px] font-medium text-ink-500 transition-colors hover:border-brand-500 hover:text-ink-900 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand-500"
+                  >
+                    Upload image
+                  </label>
+                  <input
+                    id={avatarInputId}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={handleAvatarUpload}
+                    className="sr-only"
+                  />
                 </div>
+
+                <p className="mt-1.5 text-[12.5px] text-ink-400">
+                  Pick an emoji, or upload your own logo (PNG, JPG, WEBP or SVG
+                  under 1 MB).
+                </p>
+                {avatarError ? (
+                  <p role="alert" className="mt-1 text-[12.5px] text-red-600">
+                    {avatarError}
+                  </p>
+                ) : null}
               </fieldset>
 
               <fieldset>

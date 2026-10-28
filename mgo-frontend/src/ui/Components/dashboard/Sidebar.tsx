@@ -54,9 +54,9 @@ const NAV_GROUPS: NavGroup[] = [
         icon: LuBookOpen,
       },
       {
-        label: "Widget",
+        label: "Insight",
 
-        to: "/dashboard/widget",
+        to: "/dashboard/insight",
         icon: LuCode,
       },
     ],
