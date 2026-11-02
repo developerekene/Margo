@@ -37,7 +37,7 @@ def _make_db_mock():
 # ---------------------------------------------------------------------------
 
 
-@patch("app.modules.identity.service.sign_in_with_password")
+@patch("app.modules.identity.service.send_email_verification")
 @patch("app.modules.identity.service.emit_tenant_registered")
 @patch("app.modules.identity.service.get_firestore_client")
 @patch("app.modules.identity.service.auth.set_custom_user_claims")
@@ -49,28 +49,35 @@ def test_register_tenant_creates_owner_and_tenant(
     mock_set_claims,
     mock_get_db,
     mock_emit,
-    mock_signin,
+    mock_send_verification,
     registration_payload,
 ):
-    """Register creates the Firebase user, tenant doc, widget doc, member doc, and returns a token."""
+    """Register creates the Firebase user, tenant doc, widget doc, member doc.
+
+    Registration now returns a verification-required pending response; no token
+    is issued.  The verification email is sent via send_email_verification.
+    """
     mock_create_user.return_value = SimpleNamespace(uid="firebase-uid-1")
-    mock_signin.return_value = {"idToken": "test-id-token"}
 
     mock_db, _ = _make_db_mock()
     mock_get_db.return_value = mock_db
 
     result = service.register_tenant(registration_payload)
 
-    assert result.token == "test-id-token"
-    assert result.uid == "firebase-uid-1"
-    assert result.role == "company_owner"
-    assert result.email == "admin@acme.example"
-    assert result.tenant_id
+    # New response: verification pending, no token.
+    assert result.status == "verification_required"
+    assert str(result.email) == "admin@acme.example"
+
+    # Verification email must have been sent (not sign_in_with_password).
+    mock_send_verification.assert_called_once_with(
+        "admin@acme.example", "secure-password-123"
+    )
 
     # Claims must be hardcoded, never from the request.
+    tenant_id = mock_set_claims.call_args.args[1]["tenant_id"]
     mock_set_claims.assert_called_once_with(
         "firebase-uid-1",
-        {"role": "company_owner", "tenant_id": result.tenant_id},
+        {"role": "company_owner", "tenant_id": tenant_id},
     )
 
     # Three top-level collections must be touched: tenants, widgets, members.
@@ -79,12 +86,12 @@ def test_register_tenant_creates_owner_and_tenant(
     assert "widgets" in collection_calls
 
     mock_emit.assert_called_once_with(
-        tenant_id=result.tenant_id,
+        tenant_id=tenant_id,
         admin_email="admin@acme.example",
     )
 
 
-@patch("app.modules.identity.service.sign_in_with_password")
+@patch("app.modules.identity.service.send_email_verification")
 @patch("app.modules.identity.service.emit_tenant_registered")
 @patch("app.modules.identity.service.get_firestore_client")
 @patch("app.modules.identity.service.auth.set_custom_user_claims")
@@ -96,12 +103,11 @@ def test_register_tenant_writes_widget_id(
     mock_set_claims,
     mock_get_db,
     mock_emit,
-    mock_signin,
+    mock_send_verification,
     registration_payload,
 ):
     """Register must write widget_id to the tenant document."""
     mock_create_user.return_value = SimpleNamespace(uid="uid-widget-test")
-    mock_signin.return_value = {"idToken": "tok"}
 
     mock_db, _ = _make_db_mock()
     # Intercept the tenant doc set() call to inspect its payload.
@@ -143,7 +149,7 @@ def test_register_tenant_writes_widget_id(
 # ---------------------------------------------------------------------------
 
 
-@patch("app.modules.identity.service.sign_in_with_password")
+@patch("app.modules.identity.service.send_email_verification")
 @patch("app.modules.identity.service.emit_tenant_registered")
 @patch("app.modules.identity.service.get_firestore_client")
 @patch("app.modules.identity.service.auth.set_custom_user_claims")
@@ -155,7 +161,7 @@ def test_register_tenant_role_always_company_owner(
     mock_set_claims,
     mock_get_db,
     mock_emit,
-    mock_signin,
+    mock_send_verification,
 ):
     """Role must always be company_owner regardless of what the caller sends.
 
@@ -163,7 +169,6 @@ def test_register_tenant_role_always_company_owner(
     one from a hypothetical injected payload.
     """
     mock_create_user.return_value = SimpleNamespace(uid="uid-sec-test")
-    mock_signin.return_value = {"idToken": "tok"}
     mock_db, _ = _make_db_mock()
     mock_get_db.return_value = mock_db
 
@@ -176,8 +181,8 @@ def test_register_tenant_role_always_company_owner(
 
     result = service.register_tenant(payload)
 
-    assert result.role == "company_owner"
-    # Claims set on the Firebase user must also be company_owner.
+    # Result is a pending response, but claims on Firebase must still be company_owner.
+    assert result.status == "verification_required"
     set_claims_call = mock_set_claims.call_args
     assert set_claims_call.args[1]["role"] == "company_owner"
     assert "tenant_id" in set_claims_call.args[1]

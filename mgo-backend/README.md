@@ -70,7 +70,7 @@ Communication between modules should happen through:
 
 - `ports.py`
 - events
-- approved shared infrastructure
+- approved shared infrastructure (`app.shared.container`)
 
 The Import Linter contract enforces module independence.
 
@@ -102,6 +102,15 @@ mgo-backend/
 │   │   │   └── service.py
 │   │   │
 │   │   ├── billing/
+│   │   │   ├── __init__.py
+│   │   │   ├── api.py
+│   │   │   ├── events.py
+│   │   │   ├── permissions.py
+│   │   │   ├── plans.py
+│   │   │   ├── ports.py
+│   │   │   ├── schemas.py
+│   │   │   └── service.py
+│   │   │
 │   │   ├── knowledge/
 │   │   ├── embedding/
 │   │   ├── retrieval/
@@ -118,7 +127,19 @@ mgo-backend/
 │   └── router.py
 │
 ├── tests/
-│   └── __init__.py
+│   ├── __init__.py
+│   ├── test_billing_plans.py
+│   ├── test_identity_forgot_password.py
+│   ├── test_identity_login.py
+│   ├── test_identity_permissions.py
+│   ├── test_identity_platform.py
+│   ├── test_identity_registration.py
+│   ├── test_identity_users.py
+│   ├── test_identity_verification.py
+│   └── test_identity_widgets.py
+│
+├── scripts/
+│   └── bootstrap_platform_admin.py
 │
 ├── .env.example
 ├── Dockerfile
@@ -128,8 +149,6 @@ mgo-backend/
 ├── setup.cfg
 └── README.md
 ```
-
-The module directories follow the same basic structure so that implementation can be added consistently as development progresses.
 
 ---
 
@@ -220,17 +239,16 @@ Authorization: Bearer <token>
 
 The identity module is responsible for token verification and identity resolution.
 
-### Important Authentication Note
+### Token Validation Policy (BE-004)
 
-The existing project documents contain conflicting descriptions around whether the frontend should use the Firebase Auth Client SDK directly.
+Every authenticated request passes the bearer token through `verify_id_token` with `check_revoked=True`. The token is then checked for:
 
-For the architectural rule adopted by this README:
+1. **Validity and expiry** — invalid/expired tokens return `401`.
+2. **Revocation** — tokens belonging to revoked sessions return `401`.
+3. **Email verification** — tokens where `email_verified=False` return `403 email_not_verified`.
+4. **Role claim** — tokens without a `role` claim return `403 permission_denied`.
 
-> **Frontend → FastAPI → Firebase**
-
-the frontend must not directly call Firebase Auth.
-
-The exact implementation of the login endpoint should therefore follow the final backend authentication decision made during implementation.
+The `email_verified` flag is read from the Firebase token (a trusted server-side claim). Clients cannot supply or override it.
 
 ---
 
@@ -249,8 +267,6 @@ Production frontend configuration should use:
 ```env
 VITE_API_BASE_URL=/api/v1
 ```
-
-The frontend should build API requests from this base URL rather than hard-coding individual production domains.
 
 ---
 
@@ -304,30 +320,21 @@ A paginated response includes:
 }
 ```
 
-The frontend should treat `next_cursor` as an opaque value and should not attempt to interpret it.
+The frontend should treat `next_cursor` as an opaque value.
 
 ---
 
 ## 10. Date and Time Format
 
-API timestamps use:
+API timestamps use ISO 8601 UTC.
 
-```text
-ISO 8601 UTC
-```
-
-Example:
-
-```text
-2026-09-15T12:30:00Z
-```
+Example: `2026-09-15T12:30:00Z`
 
 ---
 
-# 11. Identity API ✅ Live (BE-003)
+# 11. Identity API (BE-003 + BE-004)
 
-Identity manages tenant registration, users, roles, invitations, widget domains,
-and platform administrators. All endpoints below are implemented and tested.
+Identity manages tenant registration, email verification, login, users, roles, invitations, widget domains, platform administrators, and session management.
 
 ## Roles
 
@@ -338,7 +345,7 @@ and platform administrators. All endpoints below are implemented and tested.
 | `company_admin` | Manages members; invited by owner/admin |
 | `company_member` | Invited by owner/admin |
 
-> Tokens with no `role` claim are rejected with `403 permission_denied` everywhere.
+Tokens with no `role` claim are rejected with `403 permission_denied` everywhere.
 
 ## Firestore Data Model
 
@@ -355,7 +362,53 @@ widgets/{widget_id}
 ```
 
 `widget_id` = `wgt_` + 12 hex chars, generated at registration.
-Older tenants receive a widget lazily on their first widget-domain access.
+
+---
+
+## Registration and Email Verification Workflow (BE-004)
+
+The registration flow is a **two-step** process. No session token is issued at registration time.
+
+```text
+1. POST /identity/register
+       |
+       v
+   Validate input
+       |
+       v
+   Create Firebase Auth user + set claims
+       |
+       v
+   Write tenant + widget + member docs
+       |
+       v
+   Emit TenantRegistered event
+   (billing creates trial subscription here)
+       |
+       v
+   Send Firebase email-verification link
+       |
+       v
+   Return 200 { status: "verification_required" }
+       |
+       (no token issued)
+       |
+2. User clicks verification link in email
+       |
+       v
+   Firebase marks email_verified = true
+       |
+3. POST /identity/login
+       |
+       v
+   Backend verifies email_verified = true
+       |
+       v
+   Return token + company context
+```
+
+**Why no token at registration?**
+A session token returned at registration would allow unverified accounts to access protected endpoints. The trial subscription is created at registration (so billing is ready), but the user cannot access it until their email is verified.
 
 ---
 
@@ -374,22 +427,26 @@ Create a tenant and owner. No auth required.
 }
 ```
 
-`website_url` is optional. The `role` field does not exist on this schema —
-the service always sets `company_owner`, never reading one from the request.
+`website_url` is optional. The service always sets `company_owner` — there is no `role` field on this schema.
 
 ```json
 // Response 200
 {
   "data": {
-    "token": "<firebase_id_token>",
-    "uid": "firebase_uid",
-    "role": "company_owner",
-    "tenant_id": "acme-systems-a1b2c3",
-    "email": "admin@acme.example"
+    "status": "verification_required",
+    "email": "admin@acme.example",
+    "message": "A verification email has been sent to your address. Please verify your email before signing in."
   },
   "error": null
 }
 ```
+
+**No token is issued at registration.** The user must verify their email before signing in.
+
+**Frontend behavior:**
+- Show a confirmation screen telling the user to check their email.
+- Provide a "Resend verification email" option (calls `POST /identity/resend-verification`).
+- Do not redirect to the dashboard or attempt login until after verification.
 
 | Error code | HTTP | Meaning |
 |---|---|---|
@@ -398,9 +455,37 @@ the service always sets `company_owner`, never reading one from the request.
 
 ---
 
+### POST /api/v1/identity/resend-verification
+
+Resend an email-verification link. No auth required.
+
+**Rate limited:** one email per address per 60 seconds (in-memory, resets on server restart).
+
+```json
+// Request
+{ "email": "admin@acme.example" }
+```
+
+```json
+// Response 200 (always the same regardless of account existence)
+{
+  "data": {
+    "message": "If an unverified account exists for this email, a new verification link has been sent."
+  },
+  "error": null
+}
+```
+
+**Security notes:**
+- Response is identical whether the email is known, unknown, or already verified (prevents account enumeration).
+- Already-verified accounts do not receive a second email.
+- Requests within the 60-second cooldown window return the same response without sending.
+
+---
+
 ### POST /api/v1/identity/login
 
-Email + password login. No auth required.
+Email + password login. No auth required. **Requires prior email verification.**
 
 ```json
 // Request
@@ -415,60 +500,59 @@ Email + password login. No auth required.
     "uid": "firebase_uid",
     "role": "company_owner",
     "tenant_id": "acme-systems-a1b2c3",
-    "email": "admin@acme.example"
+    "email": "admin@acme.example",
+    "display_name": "Alex Admin",
+    "company_name": "Acme Systems"
   },
   "error": null
 }
 ```
+
+- `company_name` is read from the `tenants/{tenant_id}` document, never inferred from the email domain.
+- `display_name` may be `null` if not set.
+- `tenant_id` and `company_name` are `null` for `platform_admin` accounts.
 
 Firebase error codes are **never** returned to the caller — only logged server-side.
 
 | Error code | HTTP | Meaning |
 |---|---|---|
 | `invalid_credentials` | 401 | Wrong email or password |
-| `too_many_attempts` | 429 | Firebase rate limit (`TOO_MANY_ATTEMPTS_TRY_LATER`) |
+| `too_many_attempts` | 429 | Firebase rate limit |
+| `email_not_verified` | 403 | Email has not been verified |
 | `subscription_inactive` | 403 | Tenant not active |
 | `permission_denied` | 403 | Token has no `role` claim |
 
-An invited member's status is flipped to `"active"` on their first successful login.
+**Invited member behavior on first login:**
+Status is flipped from `"invited"` to `"active"`. `email_verified` is set to `true` via Admin SDK — invited users set their password through a password-reset link which does not automatically set `email_verified` in Firebase. The backend acts as trusted verifier.
+
+**Platform admin behavior on first login:**
+Same trusted-verifier pattern — `email_verified` set to `true` via Admin SDK on first login.
 
 ---
 
 ### POST /api/v1/identity/forgot-password
 
-Request a password-reset email. No authentication required.
-
-**Request**
+Request a password-reset email. No auth required.
 
 ```json
+// Request
+{ "email": "admin@acme.example" }
+// Response 200
 {
-  "email": "admin@acme.example"
-}
-```
-
-**Response 200**
-
-```json
-{
-  "data": {
-    "message": "If an account exists for this email, a password reset link has been sent."
-  },
+  "data": { "message": "If an account exists for this email, a password reset link has been sent." },
   "error": null
 }
 ```
 
-The response is intentionally generic so the endpoint does not disclose whether an email address has an account. The frontend should display the returned message without revealing account-existence information.
+Response is intentionally generic (no account-existence disclosure).
 
-**Frontend behavior**
-- Provide a forgot-password form that accepts an email address.
-- Submit the email to this endpoint.
-- Display the same generic confirmation for existing and non-existing accounts.
-- Handle validation errors and unexpected server errors appropriately.
-
+---
 
 ### GET /api/v1/identity/me
 
-Returns the caller's profile. Requires `Authorization: Bearer <token>`.
+Returns the authenticated caller's profile and company context. Requires `Authorization: Bearer <token>`.
+
+Unverified tokens return `403 email_not_verified`.
 
 ```json
 // Response 200
@@ -477,11 +561,58 @@ Returns the caller's profile. Requires `Authorization: Bearer <token>`.
     "uid": "firebase_uid",
     "email": "admin@acme.example",
     "role": "company_owner",
-    "tenant_id": "acme-systems-a1b2c3"
+    "tenant_id": "acme-systems-a1b2c3",
+    "display_name": "Alex Admin",
+    "company_name": "Acme Systems"
   },
   "error": null
 }
 ```
+
+- `company_name` is read from the tenant record. Never inferred from the email domain.
+- `tenant_id` and `company_name` are `null` for `platform_admin` accounts.
+
+---
+
+### POST /api/v1/identity/logout
+
+Sign out from the **current device**. Requires auth.
+
+```json
+// Response 200
+{
+  "data": {
+    "status": "logged_out",
+    "message": "Signed out from this device. Please discard your token. Other sessions remain active."
+  },
+  "error": null
+}
+```
+
+**Limitation:** Firebase bearer tokens cannot be invalidated server-side per-device. The client must discard its stored token. The token remains cryptographically valid until natural expiry (~1 hour). Other sessions are unaffected.
+
+---
+
+### POST /api/v1/identity/logout/all
+
+Sign out from **all devices** by revoking Firebase refresh tokens. Requires auth.
+
+```json
+// Response 200
+{
+  "data": {
+    "status": "logged_out",
+    "message": "Signed out from all devices. All existing sessions have been revoked."
+  },
+  "error": null
+}
+```
+
+**Behavior:** Firebase refresh-token revocation via Admin SDK. Because `verify_id_token` is called with `check_revoked=True` on every request, revoked sessions fail at the next validation. There is a ~1-minute window before Firebase's token cache propagates the revocation.
+
+| Error code | HTTP | Meaning |
+|---|---|---|
+| `logout_failed` | 500 | Firebase token revocation failed |
 
 ---
 
@@ -517,9 +648,10 @@ Invite a user. Auth: owner/admin of own tenant.
 { "email": "new@acme.example", "name": "New User", "role": "company_member" }
 ```
 
-`role` must be `"company_admin"` or `"company_member"` — `"platform_admin"` is
-rejected by schema. `tenant_id` is always read from the **path**, never the body.
-A Firebase set-password email is sent to the invitee automatically.
+`role` must be `"company_admin"` or `"company_member"` — `"platform_admin"` is rejected by schema. `tenant_id` is always read from the **path**, never the body. A Firebase set-password email is sent to the invitee.
+
+**Invited user verification policy:**
+Firebase does not automatically set `email_verified=true` for the password-reset flow. The backend marks `email_verified=true` via Admin SDK on the invitee's first successful login. Until then, `email_verified=false` and they cannot access protected endpoints.
 
 ```json
 // Response 200
@@ -548,15 +680,12 @@ Members with `status: "invited"`. Auth: owner/admin of own tenant. Paginated.
 
 Remove a member. Auth: owner/admin of own tenant.
 
-Removal matrix:
-
 | Caller role | Can remove |
 |---|---|
 | `company_owner` | `company_admin`, `company_member` |
 | `company_admin` | `company_member` only |
 
-On success: member doc deleted, refresh tokens revoked, Auth user deleted
-(email freed for re-invite).
+On success: member doc deleted, refresh tokens revoked, Auth user deleted.
 
 ```json
 // Response 200
@@ -588,17 +717,12 @@ List allowed domains. Auth: owner/admin of own tenant.
 Add a domain. Auth: owner/admin of own tenant.
 
 ```json
-// Request — scheme, port, and path are stripped automatically
+// Request
 { "domain": "https://acme.example:8080/any/path" }
 // Stored as: "acme.example"
 ```
 
 Rules: `"localhost"` allowed; wildcards (`*`) rejected; deduplication applied; max 20 per tenant.
-
-```json
-// Response 200
-{ "data": { "domains": ["acme.example"] }, "error": null }
-```
 
 | Error code | HTTP | Meaning |
 |---|---|---|
@@ -613,21 +737,6 @@ All tenants, paginated. Auth: platform_admin only.
 
 `?limit=20&cursor=<opaque>` (max 100)
 
-```json
-// Response 200
-{
-  "data": {
-    "tenants": [{
-      "tenant_id": "acme-systems-a1b2c3", "name": "Acme Systems",
-      "admin_email": "admin@acme.example", "status": "active",
-      "created_at": "2026-01-01T00:00:00+00:00"
-    }],
-    "next_cursor": null
-  },
-  "error": null
-}
-```
-
 ---
 
 ### POST /api/v1/identity/platform-admins
@@ -641,227 +750,118 @@ Create a platform admin. Auth: platform_admin only. Sends set-password email.
 { "data": { "uid": "firebase_uid", "email": "newadmin@platform.example", "status": "invited" }, "error": null }
 ```
 
+**Platform admin verification policy:**
+`email_verified` is set to `true` via Admin SDK on first login (trusted-verifier pattern). Platform admins have no `tenant_id` claim and `company_name` is `null` in all responses.
+
 | Error code | HTTP | Meaning |
 |---|---|---|
 | `email_already_registered` | 409 | Email already exists |
 | `platform_admin_creation_failed` | 500 | Post-user step failed; Auth user deleted |
 
-> **Bootstrap:** To create the **first** platform admin, run:
+> **Bootstrap:** To create the **first** platform admin:
 > ```bash
 > python scripts/bootstrap_platform_admin.py --email admin@platform.example
 > ```
-> This promotes an existing Firebase user. After the first admin exists, use this API endpoint instead.
 
 ---
 
-# 12. Billing API
+# 12. Billing API (BE-004)
 
-Billing manages:
+Billing manages subscriptions, plans, checkout, payment providers, invoices, and subscription limits.
 
-- subscriptions
-- plans
-- checkout
-- payment providers
-- invoices
-- subscription limits
+## Trial Subscription on Registration (BE-004)
+
+When a new tenant registers, the `TenantRegistered` domain event triggers automatic trial subscription creation.
+
+```text
+POST /identity/register
+   |
+   v
+emit_tenant_registered(tenant_id, admin_email)
+   |
+   v (event bus)
+billing.create_trial_subscription(tenant_id, admin_email)
+   |
+   v
+Firestore: subscriptions/{subscription_id}
+  tenant_id, plan_id: "starter", status: "TRIAL",
+  trial_end: now + 14 days
+```
+
+**Idempotency:** If a subscription already exists for the tenant, the handler is a no-op.
+
+**Billing failure isolation:** A failure during trial creation does not block registration. The error is logged for alerting.
+
+**Access timing:** The trial is created at registration, but is inaccessible until the user verifies their email.
+
+## Plan Catalogue
+
+| Plan | Users | Documents | Crawl Pages | Monthly Messages | Widget Domains |
+|---|---|---|---|---|---|
+| `starter` (Trial) | 3 | 10 | 100 | 500 | 1 |
+| `professional` | 10 | 100 | 1,000 | 5,000 | 3 |
+| `enterprise` | 100 | 1,000 | 10,000 | 50,000 | 10 |
+
+Trial length: **14 days**.
+
+## Subscription Status Lifecycle
+
+```text
+TRIAL     → ACTIVE     (successful payment)
+ACTIVE    → PAST_DUE   (payment failure)
+PAST_DUE  → ACTIVE     (recovered within 7-day grace period)
+PAST_DUE  → SUSPENDED  (grace period elapsed)
+           → CANCELLED  (cancelled by tenant)
+           → EXPIRED
+```
+
+Statuses with feature access: `TRIAL`, `ACTIVE`, `PAST_DUE` (within grace period).
+
+## Architectural Rule: Billing Cannot Import Firebase
+
+Billing accesses Firestore through the shared service locator:
+
+```python
+from app.shared.container import get_db
+db = get_db()
+```
+
+Enforced by the Import Linter `firebase-sdk-restricted` contract.
 
 ## Endpoints
 
-### Get Subscription
-
 ```http
-GET /api/v1/billing/{tenant_id}/subscription
-```
-
-### Create Checkout
-
-```http
+GET  /api/v1/billing/{tenant_id}/subscription
 POST /api/v1/billing/{tenant_id}/checkout
-```
-
-Supported providers:
-
-```text
-stripe
-paystack
-```
-
-### Stripe Webhook
-
-```http
+GET  /api/v1/billing/{tenant_id}/invoices
 POST /api/v1/billing/webhook/stripe
-```
-
-### Paystack Webhook
-
-```http
 POST /api/v1/billing/webhook/paystack
 ```
-
-### List Invoices
-
-```http
-GET /api/v1/billing/{tenant_id}/invoices
-```
-
-### Billing Ports
-
-The billing module exposes capabilities such as:
-
-- `is_subscription_active`
-- `is_within_plan_limit`
-- `is_within_rate_limit`
 
 ---
 
 # 13. Knowledge API
 
-Knowledge manages the information used by Margo's AI system.
-
-Supported sources include:
-
-- website crawling
-- Markdown documents
-- PDF documents
-
-## Start Website Crawl
-
 ```http
-POST /api/v1/knowledge/{tenant_id}/crawl
-```
-
-Returns a `job_id`.
-
-## Get Crawl Status
-
-```http
-GET /api/v1/knowledge/{tenant_id}/crawl/{job_id}
-```
-
-Expected processing states include:
-
-```text
-queued
-extracting
-embedding
-completed
-failed
-```
-
-## Upload Document
-
-```http
-POST /api/v1/knowledge/{tenant_id}/documents
-```
-
-Supported document types include:
-
-- PDF
-- Markdown
-
-Returns a `document_id` and processing status.
-
-## List Documents
-
-```http
-GET /api/v1/knowledge/{tenant_id}/documents
-```
-
-## Delete Document
-
-```http
+POST   /api/v1/knowledge/{tenant_id}/crawl
+GET    /api/v1/knowledge/{tenant_id}/crawl/{job_id}
+POST   /api/v1/knowledge/{tenant_id}/documents
+GET    /api/v1/knowledge/{tenant_id}/documents
 DELETE /api/v1/knowledge/{tenant_id}/documents/{document_id}
 ```
 
----
-
-# 14. Internal Knowledge Endpoints
-
-The following endpoints are internal worker endpoints and are **not frontend endpoints**.
-
-### Process Website Page
+Internal worker endpoints (Cloud Tasks only, frontend must not call):
 
 ```http
 POST /api/v1/knowledge/internal/process-page
-```
-
-### Process Document
-
-```http
 POST /api/v1/knowledge/internal/process-document
 ```
 
-These endpoints are intended for Cloud Tasks execution and require the appropriate service-to-service authentication.
-
-The frontend must never call them directly.
-
 ---
 
-# 15. Embedding Module
+# 14. Chat API
 
-The embedding module has no public HTTP endpoints.
-
-It handles embedding-related processing and uses Firestore's native vector search capability.
-
-It exposes internal capabilities through its ports.
-
-It subscribes to knowledge-processing events such as:
-
-```text
-PageExtracted
-DocumentExtracted
-```
-
----
-
-# 16. Retrieval Module
-
-The retrieval module has no public HTTP endpoints.
-
-Its main responsibility is obtaining relevant context for the agent.
-
-It exposes functionality through:
-
-```text
-get_context(...)
-```
-
-The retrieval module should remain independent from the public API layer.
-
----
-
-# 17. Agent Module
-
-The agent module has no public HTTP endpoints.
-
-It is responsible for generating AI responses using Gemini and retrieved knowledge.
-
-It exposes functionality through:
-
-```text
-generate_reply(...)
-```
-
-The agent should not be called directly by the frontend.
-
-The frontend communicates with the chat API instead.
-
----
-
-# 18. Chat API
-
-Chat is the visitor-facing orchestration layer.
-
-The chat system supports:
-
-- website visitors
-- AI responses
-- streaming
-- conversations
-- conversation history
-- citations
-
-## WebSocket
+## WebSocket (Visitor)
 
 ```text
 wss://<host>/api/v1/chat/ws/{widget_id}
@@ -869,143 +869,40 @@ wss://<host>/api/v1/chat/ws/{widget_id}
 
 The widget domain is validated through the identity module.
 
-### Initial Client Message
-
-```json
-{
-  "conversation_id": null,
-  "message": "What are your office hours?"
-}
-```
-
-An existing conversation can provide its conversation ID:
-
-```json
-{
-  "conversation_id": "existing-id",
-  "message": "Can you tell me more?"
-}
-```
-
-### Token Event
-
-The server streams response tokens:
-
-```json
-{
-  "type": "token",
-  "content": "We're"
-}
-```
-
-### Completion Event
-
-```json
-{
-  "type": "done",
-  "conversation_id": "abc123",
-  "sources": [
-    {
-      "title": "Hours",
-      "url": "https://company.com/hours"
-    }
-  ]
-}
-```
-
-### Error Event
-
-```json
-{
-  "type": "error",
-  "code": "subscription_inactive",
-  "message": "This agent is currently unavailable."
-}
-```
-
-If `conversation_id` is `null`, the backend generates a conversation ID.
-
-The widget should store the returned conversation ID locally and reuse it until the conversation expires.
-
----
-
-# 19. Conversation Dashboard API
-
-## List Conversations
+## Dashboard
 
 ```http
 GET /api/v1/chat/{tenant_id}/conversations
-```
-
-## Get Conversation
-
-```http
 GET /api/v1/chat/{tenant_id}/conversations/{conversation_id}
 ```
 
-These endpoints are intended for the authenticated tenant dashboard.
-
 ---
 
-# 20. Platform API
-
-Platform endpoints are restricted to platform administrators.
-
-## Platform Overview
+# 15. Platform API
 
 ```http
 GET /api/v1/platform/overview
-```
-
-## Inspect Tenant
-
-```http
 GET /api/v1/platform/{tenant_id}/inspect
-```
-
-## System Logs
-
-```http
 GET /api/v1/platform/system-logs
 ```
 
+All restricted to `platform_admin`.
+
 ---
 
-# 21. Frontend Integration Rules
-
-The frontend should follow these rules.
+# 16. Frontend Integration Rules
 
 ## Rule 1 — Use the API
 
-All application data should be accessed through:
-
-```text
-FastAPI
-```
-
-The frontend should not access Firebase directly.
+All data must go through FastAPI. The frontend must not call Firebase directly.
 
 ## Rule 2 — Use `/api/v1`
-
-Example:
 
 ```javascript
 const API_BASE_URL = "/api/v1";
 ```
 
-Requests should then follow:
-
-```text
-/api/v1/identity/...
-/api/v1/billing/...
-/api/v1/knowledge/...
-/api/v1/chat/...
-/api/v1/platform/...
-```
-
-## Rule 3 — Send Authentication Credentials
-
-Authenticated requests should include:
+## Rule 3 — Send Auth Credentials
 
 ```http
 Authorization: Bearer <token>
@@ -1013,435 +910,218 @@ Authorization: Bearer <token>
 
 ## Rule 4 — Handle the Standard Envelope
 
-The frontend API wrapper should understand:
-
 ```json
-{
-  "data": {},
-  "error": null
-}
+{ "data": {}, "error": null }
+{ "data": null, "error": { "code": "...", "message": "...", "details": {} } }
 ```
 
-and:
+## Rule 5 — Do Not Call Internal Endpoints
+
+The frontend must not call `/knowledge/internal/*`.
+
+## Rule 6 — Handle Email Verification Errors (BE-004)
+
+`403 email_not_verified` may occur on any authenticated endpoint for an unverified user:
 
 ```json
 {
   "data": null,
   "error": {
-    "code": "...",
-    "message": "...",
-    "details": {}
+    "code": "email_not_verified",
+    "message": "Email address has not been verified."
   }
 }
 ```
 
-## Rule 5 — Do Not Call Internal Endpoints
-
-The frontend must not call:
-
-```text
-/knowledge/internal/*
-```
-
-These are backend/Cloud Tasks endpoints.
-
-## Rule 6 — WebSocket for Visitor Chat
-
-The embedded visitor widget uses:
-
-```text
-wss://<host>/api/v1/chat/ws/{widget_id}
-```
-
-It should support:
-
-- streamed tokens
-- completion events
-- error events
-- conversation IDs
-- citations
-- reconnect behavior
+**Frontend behavior on `email_not_verified`:**
+- Redirect to email-verification screen.
+- Provide a "Resend verification email" button (`POST /identity/resend-verification`).
+- Do not continue to the dashboard.
 
 ---
 
-# 22. Frontend Responsibilities
+# 17. Frontend Responsibilities (BE-004 additions)
 
-The frontend is responsible for presenting and consuming the backend API.
+### Identity
 
-## Identity
+- Registration UI
+- **Email-verification pending screen** (after registration)
+- **Resend-verification action** (`POST /identity/resend-verification`)
+- Login UI with `email_not_verified` error handling
+- Display `display_name` and `company_name` from login and `/me`
+- Logout button (`POST /identity/logout`)
+- Sign-out-all-devices option (`POST /identity/logout/all`)
+- Team management, invitations, widget-domain management
 
-The frontend should provide:
+### Billing, Knowledge, Chat, Platform
 
-- registration UI
-- login UI
-- current-user information
-- tenant dashboard
-- team/user management
-- user invitation
-- user removal
-- widget-domain management
-
-## Billing
-
-The frontend should provide:
-
-- plan display
-- checkout initiation
-- provider selection
-- subscription status
-- invoice list
-- subscription badges
-
-## Knowledge
-
-The frontend should provide:
-
-- website URL input
-- crawl initiation
-- crawl-status polling
-- document upload
-- document processing status
-- document listing
-- document deletion
-
-## Chat Widget
-
-The frontend widget should:
-
-- connect to the WebSocket
-- send visitor messages
-- receive streamed tokens
-- maintain the conversation ID
-- render Markdown
-- render citations
-- reconnect when appropriate
-
-## Chat Dashboard
-
-The dashboard should provide:
-
-- conversation list
-- conversation details
-- transcript viewing
-
-## Platform Console
-
-Platform administrators should have:
-
-- platform overview
-- tenant inspection
-- system-log access
+As previously documented.
 
 ---
 
-# 23. Hosting Architecture
-
-The production architecture uses:
+# 18. Event-Driven Module Communication
 
 ```text
-Firebase Hosting
-        |
-        | /api/*
-        v
-Google Cloud Run
-        |
-        v
-Margo FastAPI
-        |
-        +------------------+
-        |                  |
-        v                  v
-Firebase Auth          Firestore
-```
-
-The frontend is hosted as a static application through Firebase Hosting.
-
-The `/api/**` route is rewritten to the Cloud Run backend.
-
----
-
-# 24. Background Processing
-
-Long-running knowledge-processing work should not block normal API requests.
-
-The architecture uses:
-
-```text
-Frontend
-   |
-   v
-FastAPI
-   |
-   | create job
-   v
-Cloud Tasks
-   |
-   v
-Internal backend endpoint
-   |
-   v
-Knowledge processing
-   |
-   +--> extraction
-   |
-   +--> embedding
-   |
-   +--> Firestore
-```
-
-Cloud Tasks handles durable background execution.
-
-The frontend should poll the public job-status endpoint rather than attempting to execute processing itself.
-
----
-
-# 25. Event-Driven Module Communication
-
-Important events include:
-
-```text
-TenantRegistered
-PageExtracted
-DocumentExtracted
-```
-
-Example:
-
-```text
-Identity
-   |
-   | TenantRegistered
-   v
-Billing
-```
-
-and:
-
-```text
-Knowledge
-   |
-   | PageExtracted / DocumentExtracted
-   v
-Embedding
-```
-
-Events allow modules to remain decoupled.
-
----
-
-# 26. Multi-Tenancy
-
-Margo is a multi-tenant system.
-
-Tenant-specific resources must be scoped to the appropriate tenant.
-
-Examples include:
-
-- users
-- widget domains
-- subscriptions
-- invoices
-- knowledge documents
-- crawl jobs
-- conversations
-
-The backend is responsible for enforcing tenant isolation.
-
-The frontend must not attempt to enforce tenant security by itself.
-
----
-
-# 27. Authorization
-
-Roles include tenant-level and platform-level permissions.
-
-The identity module is responsible for permission-related capabilities.
-
-Example hierarchy:
-
-```text
-platform_admin
-      |
-    owner
-      |
-    admin
-      |
-   member
-```
-
-Actual permission checks must be enforced by the backend.
-
-Frontend role information should only control UI visibility and should never be treated as the security boundary.
-
----
-
-# 28. Rate Limiting
-
-The architecture uses multiple layers of rate limiting.
-
-Cloud Armor can provide protection for public traffic such as:
-
-- registration
-- login
-- WebSocket traffic
-
-Firestore counters are used for application-level limits such as:
-
-- per-conversation limits
-- tenant plan limits
-
-Billing webhooks are exempt from normal user-facing rate limits.
-
----
-
-# 29. API Quick Reference
-
-| Module | Endpoint | Method | Purpose |
-|---|---|---:|---|
-| Identity | `/identity/register` | POST | Register tenant |
-| Identity | `/identity/login` | POST | Login |
-| Identity | `/identity/forgot-password` | POST | Request password-reset email |
-| Identity | `/identity/me` | GET | Current user |
-| Identity | `/identity/{tenant_id}/users` | GET | List users |
-| Identity | `/identity/{tenant_id}/users/invite` | POST | Invite user |
-| Identity | `/identity/{tenant_id}/users/{user_id}` | DELETE | Remove user |
-| Identity | `/identity/{tenant_id}/widget-domains` | GET | List domains |
-| Identity | `/identity/{tenant_id}/widget-domains` | POST | Add domain |
-| Billing | `/billing/{tenant_id}/subscription` | GET | Subscription |
-| Billing | `/billing/{tenant_id}/checkout` | POST | Checkout |
-| Billing | `/billing/{tenant_id}/invoices` | GET | Invoices |
-| Knowledge | `/knowledge/{tenant_id}/crawl` | POST | Start crawl |
-| Knowledge | `/knowledge/{tenant_id}/crawl/{job_id}` | GET | Crawl status |
-| Knowledge | `/knowledge/{tenant_id}/documents` | POST | Upload document |
-| Knowledge | `/knowledge/{tenant_id}/documents` | GET | List documents |
-| Knowledge | `/knowledge/{tenant_id}/documents/{document_id}` | DELETE | Delete document |
-| Chat | `/chat/ws/{widget_id}` | WS | Visitor chat |
-| Chat | `/chat/{tenant_id}/conversations` | GET | List conversations |
-| Chat | `/chat/{tenant_id}/conversations/{conversation_id}` | GET | Get conversation |
-| Platform | `/platform/overview` | GET | Platform overview |
-| Platform | `/platform/{tenant_id}/inspect` | GET | Inspect tenant |
-| Platform | `/platform/system-logs` | GET | System logs |
-
-All public REST endpoints are prefixed with:
-
-```text
-/api/v1
+TenantRegistered   → Billing creates trial subscription (BE-004)
+PageExtracted      → Embedding processes the page
+DocumentExtracted  → Embedding processes the document
 ```
 
 ---
 
-# 30. Development Commands
+# 19. API Quick Reference
 
-## Create Virtual Environment
+| Module | Endpoint | Method | Auth | Purpose |
+|---|---|---|---|---|
+| Identity | `/identity/register` | POST | None | Register tenant + send verification email |
+| Identity | `/identity/resend-verification` | POST | None | Resend email verification link |
+| Identity | `/identity/login` | POST | None | Login (requires verified email) |
+| Identity | `/identity/forgot-password` | POST | None | Password-reset email |
+| Identity | `/identity/me` | GET | Bearer | Current user + company context |
+| Identity | `/identity/logout` | POST | Bearer | Sign out current device |
+| Identity | `/identity/logout/all` | POST | Bearer | Sign out all devices |
+| Identity | `/identity/{tenant_id}/users` | GET | Bearer | List users |
+| Identity | `/identity/{tenant_id}/users/invite` | POST | Bearer | Invite user |
+| Identity | `/identity/{tenant_id}/users/invite` | GET | Bearer | List pending invites |
+| Identity | `/identity/{tenant_id}/users/{user_id}` | DELETE | Bearer | Remove user |
+| Identity | `/identity/{tenant_id}/widget-domains` | GET | Bearer | List domains |
+| Identity | `/identity/{tenant_id}/widget-domains` | POST | Bearer | Add domain |
+| Identity | `/identity/tenants` | GET | Bearer (admin) | List all tenants |
+| Identity | `/identity/platform-admins` | POST | Bearer (admin) | Create platform admin |
+| Billing | `/billing/{tenant_id}/subscription` | GET | Bearer | Get subscription |
+| Billing | `/billing/{tenant_id}/checkout` | POST | Bearer | Create checkout |
+| Billing | `/billing/{tenant_id}/invoices` | GET | Bearer | List invoices |
+| Billing | `/billing/webhook/stripe` | POST | Stripe sig | Stripe webhook |
+| Billing | `/billing/webhook/paystack` | POST | Paystack sig | Paystack webhook |
+| Knowledge | `/knowledge/{tenant_id}/crawl` | POST | Bearer | Start crawl |
+| Knowledge | `/knowledge/{tenant_id}/crawl/{job_id}` | GET | Bearer | Crawl status |
+| Knowledge | `/knowledge/{tenant_id}/documents` | POST | Bearer | Upload document |
+| Knowledge | `/knowledge/{tenant_id}/documents` | GET | Bearer | List documents |
+| Knowledge | `/knowledge/{tenant_id}/documents/{document_id}` | DELETE | Bearer | Delete document |
+| Chat | `/chat/ws/{widget_id}` | WS | None | Visitor chat |
+| Chat | `/chat/{tenant_id}/conversations` | GET | Bearer | List conversations |
+| Chat | `/chat/{tenant_id}/conversations/{conversation_id}` | GET | Bearer | Get conversation |
+| Platform | `/platform/overview` | GET | Bearer (admin) | Platform overview |
+| Platform | `/platform/{tenant_id}/inspect` | GET | Bearer (admin) | Inspect tenant |
+| Platform | `/platform/system-logs` | GET | Bearer (admin) | System logs |
+
+All public REST endpoints are prefixed with `/api/v1`.
+
+---
+
+# 20. Development Commands
 
 ```bash
+# Create virtual environment
 python -m venv venv
-```
 
-## Activate on Git Bash
-
-```bash
+# Activate (Git Bash)
 source venv/Scripts/activate
-```
 
-## Copy Environment File
-
-```bash
+# Copy env file
 cp .env.example .env
-```
 
-## Run FastAPI
-
-```bash
+# Run server
 uvicorn app.main:app --reload --port 3000
-```
 
-Default development address:
+# Run tests
+pytest tests/ -v
 
-```text
-http://127.0.0.1:3000
-```
-
-## Run Import Linter
-
-```bash
+# Run import linter
 bash lint.sh
 ```
 
-or:
-
-```bash
-lint-imports
-```
-
 ---
 
-# 31. Architecture Validation
+# 21. Architecture Validation
 
-Import Linter is used to enforce module independence.
+Import Linter enforces two mandatory contracts:
 
-The architecture contract is:
+### Contract 1: Module Independence
 
 ```text
 Modules must not import each other directly
 ```
 
-A successful validation should report:
+### Contract 2: Firebase SDK Restriction
+
+```text
+Only identity may import the Firebase SDK
+```
+
+All other modules access Firestore through `app.shared.container.get_db()`.
+
+A successful run reports:
 
 ```text
 Modules must not import each other directly KEPT
-Contracts: 1 kept, 0 broken.
+Only identity may import the Firebase SDK KEPT
+Contracts: 2 kept, 0 broken.
 ```
 
-The backend structural setup has been validated with Import Linter.
+---
+
+# 22. Implementation Status
+
+## BE-003 — Identity Foundation (Complete)
+
+- Modular backend structure and Import Linter validation
+- Firebase Auth + Firestore integration
+- Token verification with `check_revoked=True`
+- Role-based authorization
+- Tenant creation, widget IDs, invited user management, widget domain management
+- Platform admin provisioning
+
+## BE-004 — Identity, Email Verification, Logout, and Billing Integration (Complete)
+
+### Identity
+
+- **Email verification gating** — registration returns `verification_required`; no token issued
+- **Verification enforcement** — `verify_token` checks `email_verified`; raises 403 for unverified users across all protected endpoints
+- **Resend-verification** — `POST /identity/resend-verification` with 60s per-email rate limit
+- **Company context** — `company_name` and `display_name` in both login and `/me` responses
+- **Logout (current device)** — `POST /identity/logout`; client-side token discard; limitation documented
+- **Logout (all devices)** — `POST /identity/logout/all`; Firebase refresh-token revocation; enforced at next validation
+- **Invited user verification** — `email_verified=True` set via Admin SDK on first login (trusted verifier pattern)
+- **Platform admin verification** — same trusted-verifier pattern; no tenant claim
+
+### Billing
+
+- **Trial subscription on registration** — `TenantRegistered` event triggers `create_trial_subscription`
+- **Idempotent trial creation** — no duplicate trials
+- **Billing failure isolation** — trial failure logged; does not block registration
+- **Import boundary** — billing uses `container.get_db()`, never `firebase_admin`
+- **Plan catalogue** — `starter`, `professional`, `enterprise` defined in `billing/plans.py`
+
+### Architecture
+
+- Both Import Linter contracts (`modules-independent`, `firebase-sdk-restricted`) maintained
+- Event bus and shared container wired at application startup
 
 ---
 
-# 32. Current Structural Status
+# 23. Environment Configuration
 
-The current backend setup establishes the architecture without adding business logic prematurely.
+| Variable | Purpose |
+|---|---|
+| `FIREBASE_PROJECT_ID` | Firebase project identifier |
+| `FIREBASE_WEB_API_KEY` | Client-facing API key (Identity Toolkit REST) |
+| `FIREBASE_CREDENTIALS_PATH` | Service account JSON path (local dev only) |
+| `FIREBASE_AUTH_EMULATOR_HOST` | Auth emulator (e.g. `localhost:9099`), unset in production |
+| `FIRESTORE_EMULATOR_HOST` | Firestore emulator (e.g. `localhost:8080`), unset in production |
+| `ALLOWED_ORIGINS` | CORS allowed origins |
 
-Completed structural work includes:
-
-- modular backend directory structure
-- module `__init__.py` files
-- core package structure
-- shared package structure
-- top-level API router
-- `/api/v1` API prefix
-- standard response infrastructure placeholders
-- environment configuration structure
-- Import Linter configuration
-- module-independence validation
-- FastAPI application entry point
-- module router composition
-
-Placeholder files such as:
-
-```text
-app/shared/container.py
-app/shared/event_bus.py
-```
-
-can remain intentionally empty until their actual implementations are required.
-
-The goal at this stage is to establish stable architectural boundaries before implementing business logic.
+In production on Cloud Run, no credentials file is needed — the attached service account is used automatically.
 
 ---
 
-# 33. Source of Truth
+# 24. Source of Truth
 
-For API and architecture decisions, the **Margo API Contract & Architecture Blueprint** is the primary architectural reference.
-
-The implementation should follow the contract's architectural boundaries rather than introducing frontend/backend shortcuts that would create coupling later.
-
-Where the existing ticket descriptions conflict with the architectural contract, the final implementation decision should be explicitly agreed upon before implementation.
+The **Margo API Contract** and **Margo Backend Tickets** are the primary references. The implementation follows the contract's architectural boundaries. Where ticket descriptions conflict with the contract, the conflict is identified and resolved explicitly before implementation.
 
 ---
 
-# 34. Frontend Integration Summary
-
-The frontend developer should think of Margo as:
+# 25. Frontend Integration Summary
 
 ```text
 Frontend
@@ -1450,11 +1130,11 @@ Frontend
    v
 Margo FastAPI
    |
-   +--> Identity
-   +--> Billing
-   +--> Knowledge
-   +--> Chat
-   +--> Platform
+   +--> Identity (auth, users, sessions)
+   +--> Billing  (subscriptions, payments)
+   +--> Knowledge (documents, crawls)
+   +--> Chat (visitor widget, dashboard)
+   +--> Platform (admin console)
    |
    v
 Firebase
@@ -1462,22 +1142,20 @@ Firebase
 
 ### The frontend should:
 
-- communicate with FastAPI
-- use `/api/v1`
-- send the required authorization header
-- consume the standard response envelope
-- use the chat WebSocket for visitor conversations
-- poll knowledge-processing jobs
-- display backend authorization state
-- maintain visitor conversation IDs locally
+- Communicate with FastAPI via `/api/v1`
+- Send `Authorization: Bearer <token>` on authenticated requests
+- Handle `email_not_verified` (403) by showing a verification screen
+- Show a verification-pending screen after registration
+- Provide a resend-verification button
+- Use `POST /identity/logout` for current-device sign-out
+- Use `POST /identity/logout/all` for all-device revocation
+- Display `company_name` and `display_name` from login and `/me`
+- Use the WebSocket for visitor conversations
+- Poll knowledge-processing jobs
 
-### The frontend should not:
+### The frontend must not:
 
-- call Firestore directly
-- call Firebase Auth directly
-- bypass the API
-- call Cloud Tasks endpoints
-- call internal knowledge-processing endpoints
-- enforce security solely through frontend logic
-
-This separation keeps the frontend decoupled from Firebase and allows the backend architecture to evolve without requiring direct Firebase access from the browser.
+- Call Firestore or Firebase Auth directly
+- Call internal knowledge-processing endpoints
+- Enforce security solely through frontend logic
+- Trust client-side `role`, `tenant_id`, or `company_name` for access control decisions
