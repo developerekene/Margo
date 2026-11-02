@@ -9,6 +9,7 @@ import {
 } from "react-icons/lu";
 
 import type { Company, Conversation } from "./CompanyTable";
+import type { Transaction } from "./BillingTransaction";
 
 /**
  * Mock data for the dashboard — and it onlt for margo.
@@ -163,8 +164,6 @@ export const COMPANYMETRICS = [
   },
 ];
 
-
-
 export const CONVERSATIONS: Conversation[] = [
   {
     id: "c-2041",
@@ -271,6 +270,134 @@ export const CONVERSATIONS: Conversation[] = [
         role: "agent",
         text: "Of course — a teammate will follow up by email.",
         time: "09:31",
+      },
+    ],
+  },
+];
+
+/* -------------------------------------------------------------------------- */
+/* Sample data — swap for the billing API when it exists                      */
+/* -------------------------------------------------------------------------- */
+
+export const TRANSACTIONS: Transaction[] = [
+  {
+    id: "txn_1042",
+    invoiceNo: "MG-2026-1042",
+    status: "paid",
+    amount: 421.2,
+    plan: "Business",
+    cycle: "annual",
+    createdAt: "2026-10-28T09:14:00.000Z",
+    periodStart: "2026-11-28T00:00:00.000Z",
+    periodEnd: "2027-11-28T00:00:00.000Z",
+    email: "margo@gmail.com",
+    method: { brand: "visa", last4: "4242" },
+    items: [
+      {
+        label: "Business plan",
+        description: "Annual subscription",
+        amount: 468,
+      },
+    ],
+    discount: { label: "Annual discount (10%)", amount: 46.8 },
+  },
+  {
+    id: "txn_1017",
+    invoiceNo: "MG-2026-1017",
+    status: "paid",
+    amount: 39,
+    plan: "Business",
+    cycle: "monthly",
+    createdAt: "2026-09-28T08:02:00.000Z",
+    periodStart: "2026-09-28T00:00:00.000Z",
+    periodEnd: "2026-10-28T00:00:00.000Z",
+    email: "margo@gmail.com",
+    method: { brand: "visa", last4: "4242" },
+    items: [
+      {
+        label: "Business plan",
+        description: "Monthly subscription",
+        amount: 39,
+      },
+    ],
+  },
+  {
+    id: "txn_0991",
+    invoiceNo: "MG-2026-0991",
+    status: "paid",
+    amount: 19,
+    plan: "Startups",
+    cycle: "monthly",
+    createdAt: "2026-08-28T10:23:00.000Z",
+    periodStart: "2026-08-28T00:00:00.000Z",
+    periodEnd: "2026-09-28T00:00:00.000Z",
+    email: "margo@gmail.com",
+    method: { brand: "mastercard", last4: "4444" },
+    items: [
+      {
+        label: "Startups plan",
+        description: "Monthly subscription",
+        amount: 19,
+      },
+    ],
+  },
+  {
+    id: "txn_0974",
+    invoiceNo: "MG-2026-0974",
+    status: "pending",
+    amount: 99,
+    plan: "Enterprise",
+    cycle: "monthly",
+    createdAt: "2026-08-02T16:45:00.000Z",
+    periodStart: "2026-08-02T00:00:00.000Z",
+    periodEnd: "2026-09-02T00:00:00.000Z",
+    email: "margo@gmail.com",
+    method: { brand: "amex", last4: "0005" },
+    items: [
+      {
+        label: "Enterprise plan",
+        description: "Monthly subscription",
+        amount: 99,
+      },
+    ],
+  },
+  {
+    id: "txn_0931",
+    invoiceNo: "MG-2026-0931",
+    status: "failed",
+    amount: 39,
+    plan: "Business",
+    cycle: "monthly",
+    createdAt: "2026-07-28T07:58:00.000Z",
+    periodStart: "2026-07-28T00:00:00.000Z",
+    periodEnd: "2026-08-28T00:00:00.000Z",
+    email: "margo@gmail.com",
+    method: { brand: "visa", last4: "4242" },
+    items: [
+      {
+        label: "Business plan",
+        description: "Monthly subscription",
+        amount: 39,
+      },
+    ],
+  },
+  {
+    id: "txn_0902",
+    invoiceNo: "MG-2026-0902",
+    status: "refunded",
+    amount: 19,
+    plan: "Startups",
+    cycle: "monthly",
+    createdAt: "2026-06-15T12:10:00.000Z",
+    periodStart: "2026-06-15T00:00:00.000Z",
+    periodEnd: "2026-07-15T00:00:00.000Z",
+    email: "margo@gmail.com",
+    method: { brand: "mastercard", last4: "4444" },
+    items: [
+      {
+        label: "Startups plan",
+        description: "Monthly subscription",
+        amount: 19,
       },
     ],
   },

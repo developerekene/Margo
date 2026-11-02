@@ -22,14 +22,14 @@ import { DashboardNavbar } from "../../Components/dashboard/Navbar";
 import { Overview } from "../../Components/dashboard/Overview";
 import { Sidebar } from "../../Components/dashboard/Sidebar";
 import { Team } from "../../Components/dashboard/Team";
-import { Widget } from "../../Components/dashboard/Widget";
+import { Insight } from "../../Components/dashboard/Insight";
 
 /** Sidebar section id -> header label. */
 const SECTIONS: Record<string, string> = {
   overview: "Overview",
   agent: "Agent",
   knowledge: "Knowledge",
-  widget: "Widget",
+  insight: "Insight",
   conversations: "Conversations",
   team: "Team",
   billing: "Billing",
@@ -46,10 +46,10 @@ const HEADINGS: Record<string, { title: string; description: string }> = {
     description:
       "Add your website or upload documents for your assistant to learn from.",
   },
-  widget: {
-    title: "Add Margo to your website",
+  insight: {
+    title: "Insights",
     description:
-      "Copy your embed code and approve the domains your widget runs on.",
+      "A quick guide to personalizing, publishing and embedding your assistant.",
   },
   conversations: {
     title: "Conversations",
@@ -70,7 +70,7 @@ const SECTION_BODIES: Record<string, ComponentType> = {
   overview: Overview,
   agent: Agent,
   knowledge: Knowledge,
-  widget: Widget,
+  insight: Insight,
   conversations: Conversations,
   team: Team,
   billing: Billing,
