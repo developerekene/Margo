@@ -5,3 +5,4 @@ firebase-admin==6.5.0
 python-multipart==0.0.9
 httpx==0.27.2
 email-validator
+stripe==11.3.0

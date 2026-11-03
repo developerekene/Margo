@@ -1,13 +1,15 @@
 import logging
 import re
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from firebase_admin import auth
 
 from app.core.firebase import (
     get_firestore_client,
     init_firebase,
+    send_email_verification,
+    send_email_verification_via_custom_token,
     send_password_reset_email,
     sign_in_with_password,
 )
@@ -21,10 +23,15 @@ from app.modules.identity.schemas import (
     InviteRequest,
     InviteResponse,
     LoginRequest,
+    LogoutResponse,
+    MeResponse,
     PendingInviteListResponse,
     PlatformAdminRequest,
     PlatformAdminResponse,
     RegisterRequest,
+    RegistrationPendingResponse,
+    ResendVerificationRequest,
+    ResendVerificationResponse,
     TenantListResponse,
     TenantSummary,
     UserListResponse,
@@ -43,6 +50,13 @@ _MEMBER_STATUS_ACTIVE = "active"
 _TENANT_STATUS_ACTIVE = "active"
 _WIDGET_ID_PREFIX = "wgt_"
 _WIDGET_ID_HEX_BYTES = 6  # produces 12 hex chars
+
+# Resend-verification rate limit: one email per address per this many seconds.
+_RESEND_COOLDOWN_SECONDS = 60
+
+# In-memory cooldown tracker: {email: datetime_last_sent}.
+# Resets on server restart — appropriate for a single-process monolith.
+_resend_cooldown: dict[str, datetime] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +117,8 @@ def _user_doc_to_response(doc_data: dict) -> UserResponse:
 # ---------------------------------------------------------------------------
 
 
-def register_tenant(payload: RegisterRequest) -> AuthResult:
-    """Create a new tenant + owner account.
+def register_tenant(payload: RegisterRequest) -> RegistrationPendingResponse:
+    """Create a new tenant + owner account and send an email-verification link.
 
     Steps (with compensation on failure):
     1. Create the Firebase Auth user.
@@ -112,9 +126,10 @@ def register_tenant(payload: RegisterRequest) -> AuthResult:
     3. Write the tenant document.
     4. Generate a widget_id and write the widget document.
     5. Write the owner's member document.
-    6. Emit TenantRegistered event.
-    7. Sign in and return the token.
+    6. Emit TenantRegistered event (billing creates the trial subscription here).
+    7. Send a Firebase email-verification link — do NOT sign in or return a token.
 
+    Returns a pending response indicating the user must verify their email.
     Any failure after step 1 deletes the Auth user so the email can be re-used.
     """
     init_firebase()
@@ -179,12 +194,18 @@ def register_tenant(payload: RegisterRequest) -> AuthResult:
             }
         )
 
+        # Event fires here — billing subscribes and creates the trial subscription.
+        # The user has not verified their email yet; the trial is created but
+        # inaccessible until verification is complete.
         emit_tenant_registered(
             tenant_id=tenant_id,
             admin_email=payload.company_email,
         )
 
-        signin = sign_in_with_password(payload.company_email, payload.password)
+        # Send the verification email.  We sign in internally using the known
+        # password to obtain a short-lived ID token, send the email, and discard
+        # the token — it is never returned to the caller.
+        send_email_verification(payload.company_email, payload.password)
 
     except Exception:
         # Best-effort cleanup — delete the Auth user so the email is free.
@@ -210,12 +231,13 @@ def register_tenant(payload: RegisterRequest) -> AuthResult:
             500,
         )
 
-    return AuthResult(
-        token=signin["idToken"],
-        uid=user.uid,
-        role="company_owner",
-        tenant_id=tenant_id,
+    return RegistrationPendingResponse(
+        status="verification_required",
         email=payload.company_email,
+        message=(
+            "A verification email has been sent to your address. "
+            "Please verify your email before signing in."
+        ),
     )
 
 
@@ -256,6 +278,7 @@ def login(payload: LoginRequest) -> AuthResult:
         raise AppError("permission_denied", "This account has no role assigned.", 403)
 
     tenant_id = claims.get("tenant_id")
+    company_name: str | None = None
 
     if tenant_id:
         db = get_firestore_client()
@@ -263,14 +286,19 @@ def login(payload: LoginRequest) -> AuthResult:
         tenant_doc = db.collection("tenants").document(tenant_id).get()
         if not tenant_doc.exists:
             raise AppError("tenant_not_found", "Tenant does not exist.", 404)
-        if tenant_doc.to_dict().get("status") != _TENANT_STATUS_ACTIVE:
+        tenant_data = tenant_doc.to_dict()
+        if tenant_data.get("status") != _TENANT_STATUS_ACTIVE:
             raise AppError(
                 "subscription_inactive",
                 "This tenant's account is not active.",
                 403,
             )
+        company_name = tenant_data.get("name")
 
         # Flip an invited member's status to active on their first successful login.
+        # Also mark email_verified=True via Admin SDK — the invited user set their
+        # password via a reset link (not an email-verification link), so Firebase
+        # does not set email_verified automatically.  We are the trusted verifier here.
         uid = claims["uid"]
         member_ref = (
             db.collection("tenants")
@@ -283,6 +311,26 @@ def login(payload: LoginRequest) -> AuthResult:
             member_data = member_doc.to_dict()
             if member_data.get("status") == _MEMBER_STATUS_INVITED:
                 member_ref.update({"status": _MEMBER_STATUS_ACTIVE})
+                # Mark email as server-verified for invited users.
+                try:
+                    auth.update_user(uid, email_verified=True)
+                except Exception:
+                    logger.exception(
+                        "Failed to mark email_verified for invited uid=%s", uid
+                    )
+    else:
+        # Platform admin — no tenant.  Mark email_verified on first login if needed.
+        # Platform admins use a password-reset link; Firebase does not set
+        # email_verified for that flow.  The Admin SDK call here is trusted.
+        uid = claims["uid"]
+        try:
+            firebase_user = auth.get_user(uid)
+            if not firebase_user.email_verified:
+                auth.update_user(uid, email_verified=True)
+        except Exception:
+            logger.exception(
+                "Failed to mark email_verified for platform_admin uid=%s", uid
+            )
 
     return AuthResult(
         token=signin["idToken"],
@@ -290,6 +338,8 @@ def login(payload: LoginRequest) -> AuthResult:
         role=claims.get("role"),
         tenant_id=tenant_id,
         email=claims.get("email"),
+        display_name=claims.get("name"),
+        company_name=company_name,
     )
 
 
@@ -787,3 +837,136 @@ def request_password_reset(
         logger.warning("Password reset not sent: %s", type(error).__name__)
 
     return ForgotPasswordResponse(message=_FORGOT_PASSWORD_MESSAGE)
+
+
+# ---------------------------------------------------------------------------
+# /me
+# ---------------------------------------------------------------------------
+
+_RESEND_VERIFICATION_MSG = (
+    "If an unverified account exists for this email, "
+    "a new verification link has been sent."
+)
+
+
+def get_me(claims: dict) -> MeResponse:
+    """Build a /me response for the authenticated caller.
+
+    Reads company_name from the tenant record if a tenant_id is present.
+    Platform admins have no tenant and return company_name=None.
+    """
+    tenant_id = claims.get("tenant_id")
+    company_name: str | None = None
+
+    if tenant_id:
+        db = get_firestore_client()
+        tenant_doc = db.collection("tenants").document(tenant_id).get()
+        if tenant_doc.exists:
+            company_name = tenant_doc.to_dict().get("name")
+
+    return MeResponse(
+        uid=claims["uid"],
+        email=claims.get("email", ""),
+        role=claims.get("role"),
+        tenant_id=tenant_id,
+        display_name=claims.get("name"),
+        company_name=company_name,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Resend email verification
+# ---------------------------------------------------------------------------
+
+
+def resend_verification(payload: ResendVerificationRequest) -> ResendVerificationResponse:
+    """Send a fresh email-verification link for an unverified account.
+
+    Uses a custom-token flow so no password is required.  Rate-limited to one
+    send per email per _RESEND_COOLDOWN_SECONDS (in-memory, resets on restart).
+
+    Always returns the same response regardless of whether the email is known
+    or already verified, to avoid leaking account existence.
+    """
+    init_firebase()
+    email = str(payload.email)
+
+    # Enforce per-email cooldown.
+    now = datetime.now(UTC)
+    last_sent = _resend_cooldown.get(email)
+    if last_sent and (now - last_sent) < timedelta(seconds=_RESEND_COOLDOWN_SECONDS):
+        # Still within cooldown — return the same generic message without sending.
+        return ResendVerificationResponse(message=_RESEND_VERIFICATION_MSG)
+
+    try:
+        firebase_user = auth.get_user_by_email(email)
+    except auth.UserNotFoundError:
+        # Do not reveal whether the account exists.
+        return ResendVerificationResponse(message=_RESEND_VERIFICATION_MSG)
+
+    if firebase_user.email_verified:
+        # Already verified — nothing to send.
+        return ResendVerificationResponse(message=_RESEND_VERIFICATION_MSG)
+
+    try:
+        send_email_verification_via_custom_token(firebase_user.uid)
+        _resend_cooldown[email] = now
+    except Exception:
+        logger.exception("Failed to resend verification email for email=%s", email)
+
+    return ResendVerificationResponse(message=_RESEND_VERIFICATION_MSG)
+
+
+# ---------------------------------------------------------------------------
+# Logout
+# ---------------------------------------------------------------------------
+
+
+def logout(caller: dict) -> LogoutResponse:
+    """Sign out from the current device.
+
+    Firebase bearer tokens cannot be server-invalidated per-device.  This
+    endpoint signals a successful logout; the client must discard its token.
+    The token remains valid until natural expiry (~1 hour) but the client
+    should not use it further.
+
+    For full cross-device invalidation use POST /logout/all instead.
+    """
+    logger.info("Logout (current device): uid=%s", caller.get("uid"))
+    return LogoutResponse(
+        status="logged_out",
+        message=(
+            "Signed out from this device. "
+            "Please discard your token. "
+            "Other sessions remain active."
+        ),
+    )
+
+
+def logout_all(caller: dict) -> LogoutResponse:
+    """Sign out from all devices by revoking Firebase refresh tokens.
+
+    Because verify_id_token is called with check_revoked=True on every
+    request, revoked tokens fail immediately at the next validation cycle
+    (within ~1 minute of Firebase's token cache window).
+
+    This is the strongest server-side invalidation available with Firebase
+    bearer tokens.
+    """
+    uid = caller["uid"]
+    try:
+        auth.revoke_refresh_tokens(uid)
+        logger.info("All tokens revoked: uid=%s", uid)
+    except Exception:
+        logger.exception("Failed to revoke tokens for uid=%s", uid)
+        raise AppError(
+            "logout_failed",
+            "Could not sign out from all devices. Please try again.",
+            500,
+        )
+
+    return LogoutResponse(
+        status="logged_out",
+        message="Signed out from all devices. All existing sessions have been revoked.",
+    )
+

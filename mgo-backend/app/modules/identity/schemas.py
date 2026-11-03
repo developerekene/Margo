@@ -21,6 +21,16 @@ class AuthResult(BaseModel):
     role: str
     tenant_id: str | None = None  # None for platform_admin accounts
     email: EmailStr
+    display_name: str | None = None
+    company_name: str | None = None  # From tenant record, never inferred from email
+
+
+class RegistrationPendingResponse(BaseModel):
+    """Returned from POST /register — no session token is issued."""
+
+    status: str  # Always "verification_required"
+    email: EmailStr
+    message: str
 
 
 class LoginRequest(BaseModel):
@@ -28,11 +38,26 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class ResendVerificationResponse(BaseModel):
+    message: str
+
+
+class LogoutResponse(BaseModel):
+    status: str
+    message: str
+
+
 class MeResponse(BaseModel):
     uid: str
     email: EmailStr
     role: str
     tenant_id: str | None = None
+    display_name: str | None = None
+    company_name: str | None = None  # From tenant record, None for platform_admin
 
 
 # ---------------------------------------------------------------------------

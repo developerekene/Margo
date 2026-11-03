@@ -6,7 +6,12 @@ from app.modules.identity.ports import verify_token
 def get_current_user(authorization: str = Header(...)) -> dict:
     """Read the Authorization header, verify the token, and return the caller's claims.
 
-    Returns: { "uid", "email", "role", "tenant_id" }
+    Returns: { "uid", "email", "role", "tenant_id", "name" }
+
+    Maps errors:
+    - Invalid / expired token → 401 unauthorized
+    - Unverified email → 403 email_not_verified
+    - No role claim → 403 permission_denied
 
     Any endpoint that adds ``user = Depends(get_current_user)`` requires a valid
     token — FastAPI runs this before the endpoint's own code executes.
@@ -22,6 +27,12 @@ def get_current_user(authorization: str = Header(...)) -> dict:
     try:
         claims = verify_token(token)
     except ValueError as e:
+        error_str = str(e)
+        if error_str.startswith("email_not_verified:"):
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "email_not_verified", "message": error_str.split(": ", 1)[1]},
+            )
         raise HTTPException(status_code=401, detail=str(e))
 
     # Reject tokens that have no role claim — they cannot be authorised.
@@ -29,6 +40,7 @@ def get_current_user(authorization: str = Header(...)) -> dict:
         raise HTTPException(status_code=403, detail="permission_denied")
 
     return claims
+
 
 
 def require_role(allowed_roles: list[str]):
