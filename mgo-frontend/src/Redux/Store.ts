@@ -5,6 +5,7 @@ import agentReducer, {
 } from "./Slices/agentslic";
 import authReducer from "./Slices/authslic";
 import chatReducer from "./Slices/chatslic";
+import notificationsReducer from "./Slices/notificationslic";
 
 export const store = configureStore({
   reducer: {
@@ -12,6 +13,7 @@ export const store = configureStore({
     agents: agentsReducer,
     auth: authReducer,
     chat: chatReducer,
+    notifications: notificationsReducer,
   },
 });
 
