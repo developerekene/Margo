@@ -23,6 +23,7 @@ import { Team } from "../../Components/dashboard/Team";
 import { Insight } from "../../Components/dashboard/Insight";
 import { NotificationBell } from "../../Components/dashboard/NotificationModel";
 import { NotificationPage } from "../../Components/dashboard/NotificationPage";
+import { Usage } from "../../Components/dashboard/Usage";
 
 /** Sidebar section id -> header label. */
 const SECTIONS: Record<string, string> = {
@@ -33,6 +34,7 @@ const SECTIONS: Record<string, string> = {
   conversations: "Conversations",
   team: "Team",
   billing: "Billing",
+  usage: "Usage",
   notifications: "Activity",
 };
 
@@ -64,6 +66,10 @@ const HEADINGS: Record<string, { title: string; description: string }> = {
     title: "Billing",
     description: "Review your plan, usage, and subscription details.",
   },
+  usage: {
+    title: "Usage",
+    description: "Track your workspace consumption against your plan limits.",
+  },
   notifications: {
     title: "Notifications",
     description:
@@ -76,6 +82,7 @@ const SECTION_BODIES: Record<string, ComponentType> = {
   overview: Overview,
   agent: Agent,
   knowledge: Knowledge,
+  usage: Usage,
   insight: Insight,
   conversations: Conversations,
   team: Team,
@@ -161,7 +168,7 @@ export default function Dashboard() {
       />
 
       {/* Offset by the sidebar width (268px) once the sidebar is pinned on desktop. */}
-      <div className="lg:pl-[268px]">
+      <div className="lg:pl-67">
         <DashboardNavbar
           onOpenSidebar={() => setNavOpen(true)}
           userName={user.adminName}
