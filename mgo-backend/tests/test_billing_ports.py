@@ -210,13 +210,12 @@ def test_no_subscription_returns_false_for_plan_limit(mock_get_db):
 
 
 @patch("app.modules.billing.ports.get_db")
-def test_unknown_resource_returns_true(mock_get_db):
-    """Unknown resource name → allowed by default."""
+def test_unknown_resource_is_denied(mock_get_db):
+    """Unknown resource name → denied (fail closed), never allowed by default."""
     mock_get_db.return_value = _mock_db_with_subscription(
         _sub_doc(SubscriptionStatus.ACTIVE)
     )
-    assert is_within_plan_limit(TENANT_ID, "nonexistent_resource") is True
-
+    assert is_within_plan_limit(TENANT_ID, "nonexistent_resource") is False
 
 @patch("app.modules.billing.ports.get_db")
 def test_monthly_messages_under_limit(mock_get_db):
@@ -273,7 +272,7 @@ def test_crawl_page_delegates_to_crawl_pages(mock_limit):
     mock_limit.assert_called_once_with(TENANT_ID, LimitedResource.CRAWL_PAGES.value)
 
 
-def test_unknown_action_returns_true():
-    """Unknown action → allowed by default, no exception."""
+def test_unknown_action_is_denied():
+    """Unregistered billable action → denied, no exception."""
     result = is_within_rate_limit(TENANT_ID, "this_action_does_not_exist")
-    assert result is True
+    assert result is False

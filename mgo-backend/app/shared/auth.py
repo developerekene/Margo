@@ -13,7 +13,7 @@ import logging
 
 from fastapi import Depends, Header, HTTPException
 
-from app.core.firebase import verify_id_token
+from app.shared.container import get_token_verifier
 
 logger = logging.getLogger("margo")
 
@@ -37,7 +37,7 @@ def get_current_user(authorization: str = Header(...)) -> dict:
     token = authorization.removeprefix("Bearer ").strip()
 
     try:
-        decoded = verify_id_token(token)
+        decoded = get_token_verifier()(token)
     except Exception as exc:
         logger.warning("Token verification failed: %s", exc)
         raise HTTPException(status_code=401, detail="Invalid or expired token.")

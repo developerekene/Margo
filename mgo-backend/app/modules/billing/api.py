@@ -1,20 +1,27 @@
 """Billing API router.
 
 All billing endpoints live here. Auth is handled by billing/permissions.py,
-which wraps app.shared.auth — never importing from identity directly.
+which wraps app.shared.auth - never importing from identity directly.
 
-Route ordering matters: /webhooks/* must come BEFORE /{tenant_id}/* so FastAPI
-does not try to match "webhooks" as a tenant_id path parameter.
+Route ordering matters: /webhook/* must come BEFORE /{tenant_id}/* so FastAPI
+does not try to match "webhook" as a tenant_id path parameter.
+
+Webhook contract (API Contract section 9): paths are /billing/webhook/stripe
+and /billing/webhook/paystack. Any failure while processing returns non-2xx so
+the provider retries; duplicates and ignored event types return 200.
 """
 
+import json
 import logging
+from functools import partial
 
 import stripe
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.responses import AppError, envelope
-from app.modules.billing import service, webhooks
+from app.modules.billing import paystack_webhooks, service, webhook_runner, webhooks
 from app.modules.billing.permissions import (
     require_billing_access,
     require_billing_owner,
@@ -26,28 +33,40 @@ logger = logging.getLogger("margo")
 router = APIRouter()
 
 
+async def _process(provider: str, event_id: str, event_type: str, apply) -> dict:
+    """Run a handler idempotently off the event loop (Firestore is blocking)."""
+    try:
+        outcome = await run_in_threadpool(
+            webhook_runner.run_idempotent, provider, event_id, event_type, apply
+        )
+    except AppError:
+        raise
+    except Exception:
+        logger.exception(
+            "Webhook processing failed: provider=%s type=%s id=%s",
+            provider,
+            event_type,
+            event_id,
+        )
+        raise AppError(
+            code="webhook_processing_failed",
+            message="Event processing failed; it will be retried.",
+            status_code=500,
+        )
+    return envelope(data={"received": True, "outcome": outcome})
+
+
 # ---------------------------------------------------------------------------
-# Webhook endpoints (public — no auth header, provider calls these directly)
-# Must be declared before /{tenant_id}/* routes.
+# Webhook endpoints (public - no auth header, provider calls these directly)
 # ---------------------------------------------------------------------------
 
 
-@router.post("/webhooks/stripe", response_model=dict)
+@router.post("/webhook/stripe", response_model=dict)
 async def stripe_webhook(
     request: Request,
     stripe_signature: str = Header(..., alias="stripe-signature"),
 ) -> dict:
-    """Receive and process Stripe webhook events.
-
-    Security: signature is verified with stripe.Webhook.construct_event before
-    any processing occurs. Invalid or tampered payloads are rejected with 400.
-
-    Supported events:
-      - checkout.session.completed
-      - invoice.payment_succeeded
-      - invoice.payment_failed
-      - customer.subscription.deleted
-    """
+    """Receive and process Stripe webhook events (signature verified first)."""
     if not settings.STRIPE_WEBHOOK_SECRET:
         raise AppError(
             code="stripe_not_configured",
@@ -55,7 +74,7 @@ async def stripe_webhook(
             status_code=503,
         )
 
-    # Read raw bytes — Stripe signature verification requires the original payload.
+    # Raw bytes - signature verification needs the original payload.
     payload = await request.body()
 
     try:
@@ -64,40 +83,65 @@ async def stripe_webhook(
             sig_header=stripe_signature,
             secret=settings.STRIPE_WEBHOOK_SECRET,
         )
-    except stripe.error.SignatureVerificationError:
-        # Invalid signature — reject immediately, log for alerting.
+    except stripe.SignatureVerificationError:
         logger.warning("Stripe webhook signature verification failed.")
         raise HTTPException(status_code=400, detail="Invalid webhook signature.")
     except Exception as exc:
-        logger.error("Stripe webhook parsing error: %s", exc)
+        logger.error("Stripe webhook parsing error: %s", type(exc).__name__)
         raise HTTPException(status_code=400, detail="Invalid webhook payload.")
 
     event_type = event.get("type")
-    logger.info("Stripe webhook received: type=%s id=%s", event_type, event.get("id"))
+    event_id = event.get("id")
+    logger.info("Stripe webhook received: type=%s id=%s", event_type, event_id)
 
-    _STRIPE_HANDLERS = {
-        "checkout.session.completed": webhooks.handle_checkout_session_completed,
-        "invoice.payment_succeeded": webhooks.handle_invoice_payment_succeeded,
-        "invoice.payment_failed": webhooks.handle_invoice_payment_failed,
-        "customer.subscription.deleted": webhooks.handle_subscription_deleted,
-    }
+    handler = webhooks.STRIPE_HANDLERS.get(event_type)
+    if handler is None:
+        return envelope(data={"received": True, "outcome": "ignored"})
 
-    handler = _STRIPE_HANDLERS.get(event_type)
-    if handler:
-        try:
-            handler(event)
-        except Exception:
-            # Log failures but return 200 — Stripe retries on non-2xx responses,
-            # which could cause duplicate processing on transient errors.
-            logger.exception(
-                "Stripe webhook handler failed: type=%s id=%s", event_type, event.get("id")
-            )
-    else:
-        # Unhandled event types are acknowledged silently — not an error.
-        logger.debug("Stripe webhook event ignored: type=%s", event_type)
+    return await _process(
+        "stripe", event_id, event_type, partial(handler, event=event)
+    )
 
-    # Stripe expects 200 to confirm receipt.
-    return envelope(data={"received": True})
+
+@router.post("/webhook/paystack", response_model=dict)
+async def paystack_webhook(
+    request: Request,
+    x_paystack_signature: str | None = Header(None),
+) -> dict:
+    """Receive and process Paystack webhook events (signature verified first)."""
+    if not settings.PAYSTACK_SECRET_KEY:
+        raise AppError(
+            code="paystack_not_configured",
+            message="Paystack is not configured on this server.",
+            status_code=503,
+        )
+
+    payload = await request.body()
+
+    if not paystack_webhooks.verify_signature(
+        payload, x_paystack_signature, settings.PAYSTACK_SECRET_KEY
+    ):
+        logger.warning("Paystack webhook signature verification failed.")
+        raise HTTPException(status_code=400, detail="Invalid webhook signature.")
+
+    try:
+        event = json.loads(payload)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid webhook payload.")
+
+    event_type = event.get("event") if isinstance(event, dict) else None
+    logger.info("Paystack webhook received: type=%s", event_type)
+
+    handler = paystack_webhooks.PAYSTACK_HANDLERS.get(event_type)
+    if handler is None:
+        return envelope(data={"received": True, "outcome": "ignored"})
+
+    return await _process(
+        "paystack",
+        paystack_webhooks.event_key(event_type, payload),
+        event_type,
+        partial(handler, event=event),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -108,13 +152,17 @@ async def stripe_webhook(
 @router.get("/{tenant_id}/subscription", response_model=dict)
 def get_subscription(
     tenant_id: str,
-    _user: dict = Depends(require_billing_access()),
+    user: dict = Depends(require_billing_access()),
 ) -> dict:
     """Return the current plan, status, entitlement limits, and usage.
 
     Auth: company_owner or company_admin of own tenant, or platform_admin.
+    A tenant member with no subscription record gets a trial provisioned; a
+    platform admin never does (so arbitrary ids cannot create records).
     """
-    result: SubscriptionResponse = service.get_subscription(tenant_id)
+    result: SubscriptionResponse = service.get_subscription(
+        tenant_id, create_if_missing=user.get("role") != "platform_admin"
+    )
     return envelope(data=result.model_dump(mode="json"))
 
 
@@ -127,13 +175,32 @@ def get_subscription(
 def create_checkout(
     tenant_id: str,
     request: CheckoutRequest,
-    _user: dict = Depends(require_billing_owner()),
+    user: dict = Depends(require_billing_owner()),
 ) -> dict:
     """Initiate a payment provider checkout session and return the redirect URL.
 
-    Auth: company_owner only (not admin) — per API Contract §3.2.
-    The client should redirect the user to checkout_url to complete payment.
-    After payment, the provider's webhook upgrades the subscription status.
+    Auth: company_owner only (not admin) - per API Contract section 3.2.
+    The client redirects the user to checkout_url; the provider's webhook
+    upgrades the subscription once payment is confirmed.
     """
-    result = service.create_checkout(tenant_id, request)
+    result = service.create_checkout(
+        tenant_id, request, customer_email=user.get("email")
+    )
+    return envelope(data=result.model_dump(mode="json"))
+
+
+# ---------------------------------------------------------------------------
+# Invoices
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{tenant_id}/invoices", response_model=dict)
+def list_invoices(
+    tenant_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    cursor: str | None = None,
+    _user: dict = Depends(require_billing_owner()),
+) -> dict:
+    """Invoice history for the tenant (owner only), newest first."""
+    result = service.list_invoices(tenant_id, limit=limit, cursor=cursor)
     return envelope(data=result.model_dump(mode="json"))
