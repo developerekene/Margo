@@ -71,6 +71,23 @@ class Settings(BaseSettings):
     # Frontend URL Paystack redirects to after checkout completes.
     PAYSTACK_CALLBACK_URL: str = "http://localhost:3000/billing/success"
 
+        # Plan price in the currency's smallest unit (kobo for NGN). Optional:
+    # sent to Paystack with the plan code and used to check the amount paid.
+    # 0 means "not configured" (amount is then not sent or checked).
+    PAYSTACK_AMOUNT_PROFESSIONAL: int = 0
+    PAYSTACK_AMOUNT_ENTERPRISE: int = 0
+
+    # ---------------------------------------------------------------------------
+    # Billing rules (PROVISIONAL until Margo confirms) - all configurable
+    # ---------------------------------------------------------------------------
+    BILLING_TRIAL_DAYS: int = 14
+    BILLING_GRACE_DAYS: int = 7
+    BILLING_TRIAL_PLAN_ID: str = "starter"
+
+    # Optional JSON overriding the plan catalogue, e.g.
+    # {"starter": {"name": "Starter", "limits": {"users": 3, "documents": 10,
+    #  "crawl_pages": 100, "monthly_messages": 500, "widget_domains": 1}}}
+    BILLING_PLANS_JSON: str = ""
 
 # Instantiate settings once for application-wide use.
 settings = Settings()
