@@ -16,6 +16,11 @@ class SubscriptionStatus(str, Enum):
     CANCELLED = "CANCELLED"
     EXPIRED = "EXPIRED"
 
+class AccessLevel(str, Enum):
+    """What a tenant may do. READ_ONLY = widget off, dashboard reads only."""
+
+    FULL = "full"
+    READ_ONLY = "read_only"
 
 class PaymentProvider(str, Enum):
     STRIPE = "stripe"
@@ -90,6 +95,9 @@ class SubscriptionResponse(BaseModel):
     limits: PlanLimits
     usage: UsageSummary
     created_at: datetime
+    # Additive fields (not in the original contract)
+    cancel_at_period_end: bool = False
+    access_level: AccessLevel = AccessLevel.FULL
 
 
 # ---------------------------------------------------------------------------
@@ -139,4 +147,4 @@ class InvoiceListResponse(BaseModel):
     """Paginated invoice list response."""
 
     invoices: list[InvoiceItem]
-    next_cursor: str | None = None
+    next_cursor: str | None = None

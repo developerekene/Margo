@@ -175,9 +175,10 @@ def test_stripe_checkout_creates_customer_and_returns_url(mock_get_db, mock_stri
     assert body["data"]["provider"] == "stripe"
 
     # Customer was created and stored back on the subscription doc.
-    mock_stripe.Customer.create.assert_called_once_with(
-        metadata={"tenant_id": TENANT_ID}
-    )
+    mock_stripe.Customer.create.assert_called_once()
+    create_kwargs = mock_stripe.Customer.create.call_args.kwargs
+    assert create_kwargs["metadata"] == {"tenant_id": TENANT_ID}
+    assert create_kwargs["idempotency_key"] == f"margo-customer-{TENANT_ID}"
     doc.reference.update.assert_called_once()
 
     # Session was created with correct price and metadata.

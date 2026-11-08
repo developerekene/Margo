@@ -6,7 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
-from app.core.firebase import get_firestore_client, init_firebase
+from app.core.firebase import (
+    get_firestore_client,
+    init_firebase,
+    verify_id_token,
+)
 from app.core.responses import (
     AppError,
     app_error_handler,
@@ -25,6 +29,7 @@ async def lifespan(app: FastAPI):
     # other non-identity modules can access it without importing app.core.firebase.
     init_firebase()
     container.register_db(get_firestore_client())
+    container.register_token_verifier(verify_id_token)
 
     # Wire billing event subscriptions (TenantRegistered → create_trial_subscription).
     register_billing_handlers()

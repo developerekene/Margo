@@ -29,3 +29,25 @@ def get_db() -> Any:
             "Call container.register_db(client) at application startup."
         )
     return _db
+
+_token_verifier: Any = None
+
+
+def register_token_verifier(fn: Any) -> None:
+    """Register the function that verifies a bearer token.
+
+    Called once at startup by the composition root (app.main), the only
+    place allowed to know the verifier comes from Firebase.
+    """
+    global _token_verifier
+    _token_verifier = fn
+
+
+def get_token_verifier() -> Any:
+    """Return the registered token verifier or raise a wiring error."""
+    if _token_verifier is None:
+        raise RuntimeError(
+            "Token verifier has not been registered. "
+            "Call container.register_token_verifier(fn) at startup."
+        )
+    return _token_verifier
