@@ -35,7 +35,10 @@ class RegistrationPendingResponse(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    # No minimum here: Firebase's hosted set-password page accepts 6
+    # characters, and login must not reject a password Firebase accepts.
+    # The 8-character policy is enforced at registration only.
+    password: str = Field(min_length=1, max_length=128)
 
 
 class ResendVerificationRequest(BaseModel):
