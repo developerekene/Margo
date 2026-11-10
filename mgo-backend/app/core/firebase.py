@@ -111,3 +111,78 @@ def send_password_reset_email(email: str) -> None:
             error_code = "UNKNOWN_ERROR"
 
         raise ValueError(f"Firebase sendOobCode failed: {error_code}")
+
+
+def _send_oob_verify_email(id_token: str) -> None:
+    """POST sendOobCode VERIFY_EMAIL using a caller-supplied ID token.
+
+    Internal helper — the token must be obtained by the caller and discarded
+    immediately after this call.  Never return an idToken to a client as a
+    side-effect of sending a verification email.
+    """
+    url = (
+        "https://identitytoolkit.googleapis.com/v1/"
+        f"accounts:sendOobCode?key={settings.FIREBASE_WEB_API_KEY}"
+    )
+    response = httpx.post(
+        url,
+        json={"requestType": "VERIFY_EMAIL", "idToken": id_token},
+        timeout=15.0,
+    )
+    if response.status_code != 200:
+        try:
+            error_code = (
+                response.json().get("error", {}).get("message", "UNKNOWN_ERROR")
+            )
+        except (ValueError, AttributeError):
+            error_code = "UNKNOWN_ERROR"
+        raise ValueError(f"Firebase sendOobCode VERIFY_EMAIL failed: {error_code}")
+
+
+def send_email_verification(email: str, password: str) -> None:
+    """Send a Firebase email-verification link after registration.
+
+    Signs in internally with the known password to obtain a short-lived ID
+    token, sends the verification email via the REST API, then discards the
+    token.  The token is never returned to any caller.
+    """
+    signin = sign_in_with_password(email, password)
+    _send_oob_verify_email(signin["idToken"])
+
+
+def _sign_in_with_custom_token(custom_token: str) -> dict:
+    """Exchange a custom token for a Firebase ID token via the REST API."""
+    url = (
+        "https://identitytoolkit.googleapis.com/v1/"
+        f"accounts:signInWithCustomToken?key={settings.FIREBASE_WEB_API_KEY}"
+    )
+    response = httpx.post(
+        url,
+        json={"token": custom_token, "returnSecureToken": True},
+        timeout=15.0,
+    )
+    if response.status_code != 200:
+        try:
+            error_code = (
+                response.json().get("error", {}).get("message", "UNKNOWN_ERROR")
+            )
+        except (ValueError, AttributeError):
+            error_code = "UNKNOWN_ERROR"
+        raise ValueError(f"Firebase signInWithCustomToken failed: {error_code}")
+    return response.json()
+
+
+def send_email_verification_via_custom_token(uid: str) -> None:
+    """Send a Firebase email-verification link when the user's password is unknown.
+
+    Used by the resend-verification endpoint.  Creates a server-side custom
+    token, exchanges it for a short-lived ID token, sends the verification
+    email, then discards the token.
+    """
+    init_firebase()
+    custom_token = auth.create_custom_token(uid)
+    # create_custom_token returns bytes; the REST endpoint expects a string.
+    if isinstance(custom_token, bytes):
+        custom_token = custom_token.decode("utf-8")
+    signin = _sign_in_with_custom_token(custom_token)
+    _send_oob_verify_email(signin["idToken"])

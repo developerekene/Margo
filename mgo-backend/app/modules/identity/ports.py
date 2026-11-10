@@ -40,10 +40,14 @@ _PERMISSIONS: dict[str, set[str]] = {
 def verify_token(token: str) -> dict:
     """Verify a Firebase ID token and return a normalised claims dict.
 
-    Returns: { "uid", "email", "role", "tenant_id" }
+    Returns: { "uid", "email", "role", "tenant_id", "name" }
 
-    Raises ValueError if the token is invalid, expired, or revoked — callers
-    turn this into a proper 401.
+    Raises ValueError if the token is invalid, expired, or revoked.
+    Raises ValueError with prefix 'email_not_verified:' if the Firebase
+    email_verified flag is False — callers map this to HTTP 403.
+
+    Note: platform admins are marked email_verified=True via Admin SDK on their
+    first login, so this check applies uniformly to all roles in practice.
     """
     try:
         decoded = verify_id_token(token)
@@ -51,12 +55,17 @@ def verify_token(token: str) -> dict:
         logger.warning("Token verification failed: %s", error)
         raise ValueError("Invalid or expired token.")
 
+    if not decoded.get("email_verified", False):
+        raise ValueError("email_not_verified: Email address has not been verified.")
+
     return {
         "uid": decoded.get("uid"),
         "email": decoded.get("email"),
         "role": decoded.get("role"),
         "tenant_id": decoded.get("tenant_id"),
+        "name": decoded.get("name"),
     }
+
 
 
 def resolve_widget(widget_id: str, origin_domain: str) -> str:

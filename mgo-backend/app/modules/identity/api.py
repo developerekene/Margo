@@ -11,9 +11,9 @@ from app.modules.identity.schemas import (
     ForgotPasswordRequest,
     InviteRequest,
     LoginRequest,
-    MeResponse,
     PlatformAdminRequest,
     RegisterRequest,
+    ResendVerificationRequest,
     WidgetDomainRequest,
 )
 
@@ -27,7 +27,11 @@ router = APIRouter()
 
 @router.post("/register", response_model=dict)
 def register(payload: RegisterRequest):
-    """Create a new tenant and owner account."""
+    """Create a new tenant and owner account.
+
+    Returns a verification-required response.  No session token is issued.
+    The user must verify their email before signing in.
+    """
     result = service.register_tenant(payload)
     return envelope(data=result.model_dump())
 
@@ -39,20 +43,57 @@ def login(payload: LoginRequest):
     return envelope(data=result.model_dump())
 
 
+@router.post("/resend-verification", response_model=dict)
+def resend_verification(payload: ResendVerificationRequest):
+    """Resend an email-verification link to an unverified account.
+
+    Rate-limited to one send per address per 60 seconds.  Always returns the
+    same response regardless of whether the address is known or verified.
+    """
+    result = service.resend_verification(payload)
+    return envelope(data=result.model_dump())
+
+
+@router.post("/forgot-password", response_model=dict)
+def forgot_password(payload: ForgotPasswordRequest):
+    """Send a password reset email. The response is always the same."""
+    result = service.request_password_reset(payload)
+    return envelope(data=result.model_dump())
+
+
 # ---------------------------------------------------------------------------
-# Authenticated — caller's own profile
+# Authenticated — caller's own profile and session management
 # ---------------------------------------------------------------------------
 
 
 @router.get("/me", response_model=dict)
 def me(user: dict = Depends(get_current_user)):
-    """Return the authenticated caller's profile and tenant claims."""
-    result = MeResponse(
-        uid=user["uid"],
-        email=user.get("email", ""),
-        role=user.get("role"),
-        tenant_id=user.get("tenant_id"),
-    )
+    """Return the authenticated caller's profile, role, and company context."""
+    result = service.get_me(user)
+    return envelope(data=result.model_dump())
+
+
+@router.post("/logout", response_model=dict)
+def logout(user: dict = Depends(get_current_user)):
+    """Sign out from the current device.
+
+    No server-side token invalidation is possible per-device with Firebase
+    bearer tokens.  The client must discard its token.  Other sessions remain
+    active.  Use POST /logout/all to revoke all sessions.
+    """
+    result = service.logout(user)
+    return envelope(data=result.model_dump())
+
+
+@router.post("/logout/all", response_model=dict)
+def logout_all(user: dict = Depends(get_current_user)):
+    """Sign out from all devices by revoking Firebase refresh tokens.
+
+    Because verify_id_token is called with check_revoked=True on every
+    request, this effectively ends all sessions at the next token validation
+    (~1 minute window due to Firebase token caching).
+    """
+    result = service.logout_all(user)
     return envelope(data=result.model_dump())
 
 
@@ -182,8 +223,4 @@ def create_platform_admin(
     return envelope(data=result.model_dump())
 
 
-@router.post("/forgot-password", response_model=dict)
-def forgot_password(payload: ForgotPasswordRequest):
-    """Send a password reset email. The response is always the same."""
-    result = service.request_password_reset(payload)
-    return envelope(data=result.model_dump())
+

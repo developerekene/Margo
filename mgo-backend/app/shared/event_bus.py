@@ -5,7 +5,8 @@ _subscribers: dict[str, list[Callable]] = defaultdict(list)
 
 
 def subscribe(event_name: str, handler: Callable):
-    _subscribers[event_name].append(handler)
+    if handler not in _subscribers[event_name]:
+        _subscribers[event_name].append(handler)
 
 
 def publish(event_name: str, **payload):
