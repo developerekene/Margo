@@ -1,9 +1,14 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Toaster } from "sonner";
 
 const Home = lazy(() => import("./ui/pages/Home"));
 const Signup = lazy(() => import("./ui/pages/auth/Signup"));
 const Signin = lazy(() => import("./ui/pages/auth/SignIn"));
+const ForgetPassword = lazy(() => import("./ui/pages/auth/ForgetPassword"));
+const CreateNewPassword = lazy(
+  () => import("./ui/pages/auth/CreatenewPassword"),
+);
 const Pricing = lazy(() => import("./ui/Components/Pricing"));
 const AboutUs = lazy(() => import("./ui/Components/About"));
 const ContactUs = lazy(() => import("./ui/pages/ContactUspage"));
@@ -24,6 +29,9 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/signin" element={<Signin />} />
+          <Route path="/forgot-password" element={<ForgetPassword />} />
+          <Route path="/reset-password" element={<CreateNewPassword />} />
+          <Route path="/create-new-password" element={<CreateNewPassword />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/about-us" element={<AboutUs />} />
           <Route path="/contact-us" element={<ContactUs />} />
@@ -40,6 +48,8 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
+
+      <Toaster position="top-right" richColors closeButton />
     </BrowserRouter>
   );
 }

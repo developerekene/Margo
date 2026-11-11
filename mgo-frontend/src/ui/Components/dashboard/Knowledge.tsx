@@ -1,106 +1,73 @@
-import { useState } from "react";
-
-import { LuUpload } from "react-icons/lu";
+import { LuBookOpen, LuPlus } from "react-icons/lu";
 import { useDispatch, useSelector } from "react-redux";
+import { Link } from "react-router-dom";
 
-import { messageAdded } from "../../../Redux/Slices/chatslic";
-import type { RootState } from "../../../Redux/Store";
-import { ChatbotMessage } from "../ChatbotMessage";
+import { agentSaved } from "../../../Redux/Slices/agentslic";
+import type { AppDispatch, RootState } from "../../../Redux/Store";
+import { KnowledgeBase } from "./KnowledgeBase";
 
-/** What the assistant says once a document joins its knowledge. */
-function uploadedText(fileName: string) {
-  return `I've added ${fileName} to my knowledge — ask me anything about it.`;
-}
-
-/** Knowledge — document uploads that feed the assistant's knowledge. */
+/**
+ * Knowledge — workspace shortcut for the first agent's knowledge base.
+ * Per-agent sources are also editable from the agent editor; both write to
+ * the same `agents` slice entry.
+ */
 export function Knowledge() {
-  const dispatch = useDispatch();
-  const config = useSelector((state: RootState) => state.agent);
-  const [files, setFiles] = useState<{ id: string; name: string }[]>([]);
+  const dispatch = useDispatch<AppDispatch>();
+  const agent = useSelector((state: RootState) => state.agents.items[0]);
 
-  function handleFiles(selected: FileList | null) {
-    if (!selected?.length) return;
+  if (!agent) {
+    return (
+      <section className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line-strong bg-white px-6 py-12 text-center shadow-soft">
+        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <LuBookOpen className="h-5 w-5" aria-hidden="true" />
+        </span>
 
-    const added = Array.from(selected, (file) => ({
-      id: crypto.randomUUID(),
-      name: file.name,
-    }));
+        <div>
+          <h2 className="text-[14px] font-semibold text-ink-900">
+            No agent to teach yet
+          </h2>
+          <p className="mt-1 max-w-sm text-[12.5px] leading-relaxed text-ink-500">
+            Create your first agent, then add websites, documents and FAQs for
+            it to learn from.
+          </p>
+        </div>
 
-    setFiles((prev) => [...prev, ...added]);
-
-    // Each upload is announced by the assistant, so the widget shows it too.
-    added.forEach((file) =>
-      dispatch(messageAdded("bot", uploadedText(file.name))),
+        <Link
+          to="/dashboard/agent/new"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+        >
+          <LuPlus className="h-4 w-4" aria-hidden="true" />
+          Create an agent
+        </Link>
+      </section>
     );
   }
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-xl border border-line bg-white p-5 shadow-soft">
-        <h2 className="text-[15px] font-semibold text-ink-900">
-          Upload documents
-        </h2>
-        <p className="mt-1 text-[13px] text-ink-500">
-          Add PDFs or Markdown files containing information about your business.
-        </p>
+    <div className="space-y-4">
+      <KnowledgeBase
+        sources={agent.knowledgeSources ?? []}
+        onChange={(knowledgeSources) =>
+          dispatch(
+            agentSaved({
+              ...agent,
+              knowledgeSources,
+              updatedAt: new Date().toISOString(),
+            }),
+          )
+        }
+      />
 
-        <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line-strong bg-slate-50/60 px-6 py-8 text-center transition-colors hover:border-brand-500 hover:bg-brand-50/40 focus-within:border-brand-500">
-          <LuUpload className="h-5 w-5 text-brand-500" aria-hidden="true" />
-          <span className="text-[13.5px] font-medium text-ink-900">
-            Click to upload files
-          </span>
-          <span className="text-[12px] text-ink-400">
-            PDF or Markdown, up to 10 MB each
-          </span>
-          <input
-            type="file"
-            multiple
-            accept=".pdf,.md,.markdown,.txt"
-            className="sr-only"
-            onChange={(event) => {
-              handleFiles(event.target.files);
-              event.target.value = "";
-            }}
-          />
-        </label>
-
-        {files.length ? (
-          <ul className="mt-4 flex flex-wrap gap-2">
-            {files.map((file) => (
-              <li
-                key={file.id}
-                className="rounded-full border border-line bg-slate-50 px-3 py-1 text-[12px] text-ink-500"
-              >
-                {file.name}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-4 text-[12.5px] text-ink-400">
-            No documents yet — add your first knowledge source to get started.
-          </p>
-        )}
-      </section>
-
-      {files.length ? (
-        <section className="rounded-xl border border-line bg-white p-5 shadow-soft">
-          <h2 className="text-[15px] font-semibold text-ink-900">Assistant</h2>
-          <p className="mt-1 text-[13px] text-ink-500">
-            Margo confirms every upload — the same messages show up in the
-            widget.
-          </p>
-
-          <div className="mt-4 space-y-3">
-            {files.map((file) => (
-              <ChatbotMessage
-                key={file.id}
-                text={uploadedText(file.name)}
-                config={config}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
+      <p className="text-[11.5px] leading-relaxed text-ink-400">
+        Changes save automatically to {agent.name}. Open{" "}
+        <Link
+          to="/dashboard/agent"
+          className="font-medium text-brand-700 underline-offset-2 hover:underline"
+        >
+          My Agents
+        </Link>{" "}
+        to edit a different agent.
+      </p>
     </div>
   );
 }
