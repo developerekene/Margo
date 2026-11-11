@@ -1,7 +1,7 @@
 import { createSlice } from "@reduxjs/toolkit";
 import type { PayloadAction } from "@reduxjs/toolkit";
 
-interface User {
+export interface User {
   adminName: string;
   companyName: string;
   websiteUrl: string;
@@ -54,9 +54,24 @@ const authSlice = createSlice({
       state.user = null;
       state.isAuthenticated = false;
     },
+
+    /** Settings page — profile / workspace edits applied to the signed-in user. */
+    profileUpdated: (
+      state,
+      action: PayloadAction<Partial<Omit<User, "password">>>,
+    ) => {
+      if (!state.user) return;
+      state.user = { ...state.user, ...action.payload };
+    },
+
+    passwordChanged: (state, action: PayloadAction<{ password: string }>) => {
+      if (!state.user) return;
+      state.user.password = action.payload.password;
+    },
   },
 });
 
-export const { signup, signin, logout } = authSlice.actions;
+export const { signup, signin, logout, profileUpdated, passwordChanged } =
+  authSlice.actions;
 
 export default authSlice.reducer;

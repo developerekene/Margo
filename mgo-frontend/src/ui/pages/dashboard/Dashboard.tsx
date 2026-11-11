@@ -23,6 +23,7 @@ import { Team } from "../../Components/dashboard/Team";
 import { Insight } from "../../Components/dashboard/Insight";
 import { NotificationBell } from "../../Components/dashboard/NotificationModel";
 import { NotificationPage } from "../../Components/dashboard/NotificationPage";
+import { Settings } from "../../Components/dashboard/Settings";
 import { Usage } from "../../Components/dashboard/Usage";
 
 /** Sidebar section id -> header label. */
@@ -35,6 +36,7 @@ const SECTIONS: Record<string, string> = {
   team: "Team",
   billing: "Billing",
   usage: "Usage",
+  settings: "Settings",
   notifications: "Activity",
 };
 
@@ -70,6 +72,11 @@ const HEADINGS: Record<string, { title: string; description: string }> = {
     title: "Usage",
     description: "Track your workspace consumption against your plan limits.",
   },
+  settings: {
+    title: "Settings",
+    description:
+      "Manage your profile, workspace details, notifications and security.",
+  },
   notifications: {
     title: "Notifications",
     description:
@@ -87,6 +94,7 @@ const SECTION_BODIES: Record<string, ComponentType> = {
   conversations: Conversations,
   team: Team,
   billing: Billing,
+  settings: Settings,
   notifications: NotificationPage,
 };
 

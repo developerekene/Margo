@@ -238,13 +238,15 @@ export function Sidebar({
             </span>
 
             <div className="flex items-center gap-0.5">
-              <button
-                type="button"
+              <NavLink
+                to="/dashboard/settings"
+                onClick={onClose}
                 aria-label="Workspace settings"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-slate-100 hover:text-ink-900"
+                title="Workspace settings"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-slate-100 hover:text-ink-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
               >
                 <LuSettings className="h-4 w-4" aria-hidden="true" />
-              </button>
+              </NavLink>
               <button
                 type="button"
                 onClick={onSignOut}
