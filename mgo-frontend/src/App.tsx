@@ -1,5 +1,11 @@
-import { lazy, Suspense } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { lazy, Suspense, useLayoutEffect } from "react";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import { Toaster } from "sonner";
 
 const Home = lazy(() => import("./ui/pages/Home"));
@@ -12,10 +18,28 @@ const CreateNewPassword = lazy(
 const Pricing = lazy(() => import("./ui/Components/Pricing"));
 const AboutUs = lazy(() => import("./ui/Components/About"));
 const ContactUs = lazy(() => import("./ui/pages/ContactUspage"));
+const Features = lazy(() => import("./ui/pages/Features"));
+const HowItWorks = lazy(() => import("./ui/pages/HowItWork"));
 const Dashboard = lazy(() => import("./ui/pages/dashboard/Dashboard"));
 
 const Chatbotembed = lazy(() => import("./ui/pages/Chatbotembed"));
 const Chatbot = lazy(() => import("./ui/pages/Chatbot"));
+
+/**
+ * React Router keeps the window scroll position between routes, so footer
+ * links open the next page already scrolled to the bottom. Reset to the top
+ * on every path change; hash links keep their own anchor behaviour.
+ */
+function ScrollToTop() {
+  const { pathname, hash } = useLocation();
+
+  useLayoutEffect(() => {
+    if (hash) return;
+    window.scrollTo(0, 0);
+  }, [pathname, hash]);
+
+  return null;
+}
 
 /**
  * Routes are lazily loaded, so each page ships in its own chunk.
@@ -24,6 +48,8 @@ const Chatbot = lazy(() => import("./ui/pages/Chatbot"));
 function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
+
       <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route path="/" element={<Home />} />
@@ -35,6 +61,8 @@ function App() {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/about-us" element={<AboutUs />} />
           <Route path="/contact-us" element={<ContactUs />} />
+          <Route path="/features" element={<Features />} />
+          <Route path="/how-it-works" element={<HowItWorks />} />
           <Route path="/chatbot" element={<Chatbot />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/dashboard/agent/new" element={<Dashboard />} />
