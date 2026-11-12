@@ -140,27 +140,45 @@ def handle_checkout_session_completed(db, batch, event: dict) -> None:
         logger.error("checkout.session.completed: no subscription for %s", tenant_id)
         return
 
-    event_time = _event_time(event)
-    if is_stale(sub, event_time):
-        logger.info("checkout.session.completed is stale; ignored")
+    existing_sub_id = sub.get("stripe_subscription_id")
+    new_sub_id = session.get("subscription")
+    if existing_sub_id and new_sub_id and existing_sub_id != new_sub_id:
+        # A second paid Stripe subscription for the same tenant (e.g. two
+        # checkout tabs both paid). Keep the first one and raise an alertable
+        # error: the duplicate must be cancelled/refunded in Stripe by hand.
+        logger.error(
+            "DUPLICATE PAID SUBSCRIPTION tenant=%s existing=%s new=%s "
+            "- cancel/refund the new one in Stripe",
+            tenant_id,
+            existing_sub_id,
+            new_sub_id,
+        )
         return
 
-    batch.update(
-        ref,
-        {
-            "status": SubscriptionStatus.ACTIVE.value,
-            "provider": "stripe",
-            "plan_id": plan_id,
-            "stripe_subscription_id": session.get("subscription"),
-            "stripe_customer_id": session.get("customer"),
-            "grace_period_end": None,
-            "last_event_at": event_time,
-            "updated_at": datetime.now(UTC),
-        },
-    )
-    logger.info(
-        "Subscription activated via Stripe: tenant=%s plan=%s", tenant_id, plan_id
-    )
+    # Which plan/subscription this checkout bought is not ordering-sensitive,
+    # so it is ALWAYS recorded. (Stripe may deliver invoice.payment_succeeded
+    # with a later timestamp but before this event; skipping this one as
+    # "stale" would leave an active tenant on the wrong plan.)
+    update: dict = {
+        "provider": "stripe",
+        "plan_id": plan_id,
+        "stripe_subscription_id": new_sub_id,
+        "stripe_customer_id": session.get("customer"),
+        "updated_at": datetime.now(UTC),
+    }
+    event_time = _event_time(event)
+    if is_stale(sub, event_time):
+        logger.info(
+            "checkout.session.completed: a newer payment event already set the "
+            "status; recording plan only (tenant=%s)",
+            tenant_id,
+        )
+    else:
+        update["status"] = SubscriptionStatus.ACTIVE.value
+        update["grace_period_end"] = None
+        update["last_event_at"] = event_time
+    batch.update(ref, update)
+    logger.info("Stripe checkout recorded: tenant=%s plan=%s", tenant_id, plan_id)
 
 
 def handle_invoice_payment_succeeded(db, batch, event: dict) -> None:
