@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 
 import { LuPencil, LuPlus, LuTrash2, LuX } from "react-icons/lu";
 import { useSelector } from "react-redux";
+import { toast } from "sonner";
 
 import type { RootState } from "../../../Redux/Store";
 import { TextField } from "../TextField";
@@ -346,14 +347,26 @@ export function Team() {
             : member,
         ),
       );
-    } else {
-      setMembers((current) => [
-        ...current,
-        { id: crypto.randomUUID(), ...form, name, email },
-      ]);
+      setDialogOpen(false);
+
+      toast.success("Member updated", {
+        description: `${name}'s role and access were saved.`,
+      });
+      return;
     }
 
+    setMembers((current) => [
+      ...current,
+      { id: crypto.randomUUID(), ...form, name, email },
+    ]);
     setDialogOpen(false);
+
+    // No invite backend yet — the email with the password-creation link is
+    // treated as sent here, and the toast confirms it to the admin.
+    toast.success("Invitation sent", {
+      description: `We sent ${name} a link at ${email} to create their password.`,
+      duration: 6000,
+    });
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

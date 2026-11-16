@@ -421,7 +421,7 @@ export default function Home() {
       {/* =========================================================
       FEATURES
       ========================================================= */}
-      <section className="bg-white">
+      <section id="features" className="bg-white">
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 sm:py-20 lg:px-10 lg:py-24">
           <div className="grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-start lg:gap-20">
             {/* Heading */}

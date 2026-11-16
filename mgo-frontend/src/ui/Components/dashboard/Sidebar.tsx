@@ -6,6 +6,7 @@ import {
   LuBot,
   LuCode,
   LuCreditCard,
+  LuGauge,
   LuLayoutDashboard,
   LuLogOut,
   LuMessageSquare,
@@ -82,6 +83,12 @@ const NAV_GROUPS: NavGroup[] = [
         to: "/dashboard/billing",
         icon: LuCreditCard,
       },
+      {
+        label: "Usage",
+
+        to: "/dashboard/usage",
+        icon: LuGauge,
+      },
     ],
   },
 ];
@@ -136,7 +143,7 @@ export function Sidebar({
       <aside
         id="dashboard-sidebar"
         aria-label="Workspace navigation"
-        className={`fixed inset-y-0 left-0 z-50 flex w-[268px] flex-col border-r border-line bg-white transition-transform duration-200 ease-out lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-67 flex-col border-r border-line bg-white transition-transform duration-200 ease-out lg:translate-x-0 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -231,13 +238,15 @@ export function Sidebar({
             </span>
 
             <div className="flex items-center gap-0.5">
-              <button
-                type="button"
+              <NavLink
+                to="/dashboard/settings"
+                onClick={onClose}
                 aria-label="Workspace settings"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-slate-100 hover:text-ink-900"
+                title="Workspace settings"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-slate-100 hover:text-ink-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
               >
                 <LuSettings className="h-4 w-4" aria-hidden="true" />
-              </button>
+              </NavLink>
               <button
                 type="button"
                 onClick={onSignOut}

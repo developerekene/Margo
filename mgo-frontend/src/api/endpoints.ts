@@ -1,4 +1,5 @@
 import { ApiError, type Endpoint } from "./client";
+import { mockSubscription, mockUsage } from "./usageMock";
 
 /* -------------------------------------------------------------------------- */
 /* Payloads                                                                   */
@@ -29,6 +30,48 @@ export type ChatBody = {
 
 export type ChatReply = {
   reply: string;
+};
+
+export type BillingPeriod = {
+  /** Inclusive `YYYY-MM-DD`. */
+  start: string;
+  /** Inclusive `YYYY-MM-DD`. */
+  end: string;
+};
+
+export type SubscriptionStatus =
+  | "active"
+  | "trialing"
+  | "past_due"
+  | "canceled";
+
+export type Subscription = {
+  planId: string;
+  cycle: "monthly" | "annual";
+  status: SubscriptionStatus;
+  /** First day of the subscription, `YYYY-MM-DD`. */
+  startedAt: string;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+};
+
+export type UsageQuery = {
+  periodStart: string;
+  periodEnd: string;
+};
+
+/** Actual consumption for a single billing period. */
+export type UsageSnapshot = {
+  periodStart: string;
+  periodEnd: string;
+  conversations: number;
+  tableRows: number;
+  /** Vector database storage in MB. */
+  vectorStorageMb: number;
+  /** Uploaded file storage in MB. */
+  fileStorageMb: number;
+  /** AI spend in the workspace billing currency. */
+  aiSpend: number;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -113,6 +156,30 @@ export const endpoints = {
         };
       },
     } satisfies Endpoint<ChatBody, ChatReply>,
+  },
+
+  billing: {
+    /** GET /api/v1/billing/subscription */
+    subscription: {
+      method: "GET",
+      path: "/billing/subscription",
+      mock: async (): Promise<Subscription | null> => {
+        await wait(450);
+        return mockSubscription();
+      },
+    } satisfies Endpoint<undefined, Subscription | null>,
+  },
+
+  usage: {
+    /** POST /api/v1/usage/summary */
+    summary: {
+      method: "POST",
+      path: "/usage/summary",
+      mock: async (body: UsageQuery): Promise<UsageSnapshot> => {
+        await wait(600);
+        return mockUsage(body.periodStart, body.periodEnd);
+      },
+    } satisfies Endpoint<UsageQuery, UsageSnapshot>,
   },
 
   // Add the next module here.

@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
 
-import { LuBell } from "react-icons/lu";
-import { useDispatch, useSelector } from "react-redux";
-import {
+import { useDispatch, useSelector } from "react-redux";import {
   Link,
   matchPath,
   useLocation,
@@ -23,6 +21,10 @@ import { Overview } from "../../Components/dashboard/Overview";
 import { Sidebar } from "../../Components/dashboard/Sidebar";
 import { Team } from "../../Components/dashboard/Team";
 import { Insight } from "../../Components/dashboard/Insight";
+import { NotificationBell } from "../../Components/dashboard/NotificationModel";
+import { NotificationPage } from "../../Components/dashboard/NotificationPage";
+import { Settings } from "../../Components/dashboard/Settings";
+import { Usage } from "../../Components/dashboard/Usage";
 
 /** Sidebar section id -> header label. */
 const SECTIONS: Record<string, string> = {
@@ -33,6 +35,9 @@ const SECTIONS: Record<string, string> = {
   conversations: "Conversations",
   team: "Team",
   billing: "Billing",
+  usage: "Usage",
+  settings: "Settings",
+  notifications: "Activity",
 };
 
 /** Page copy for every section except the overview header. */
@@ -63,6 +68,20 @@ const HEADINGS: Record<string, { title: string; description: string }> = {
     title: "Billing",
     description: "Review your plan, usage, and subscription details.",
   },
+  usage: {
+    title: "Usage",
+    description: "Track your workspace consumption against your plan limits.",
+  },
+  settings: {
+    title: "Settings",
+    description:
+      "Manage your profile, workspace details, notifications and security.",
+  },
+  notifications: {
+    title: "Notifications",
+    description:
+      "Page, chatbot, billing and team activity from your workspace.",
+  },
 };
 
 /** Which body to render for each `/dashboard/:section` route. */
@@ -70,10 +89,13 @@ const SECTION_BODIES: Record<string, ComponentType> = {
   overview: Overview,
   agent: Agent,
   knowledge: Knowledge,
+  usage: Usage,
   insight: Insight,
   conversations: Conversations,
   team: Team,
   billing: Billing,
+  settings: Settings,
+  notifications: NotificationPage,
 };
 
 /** The agent editor is rendered inside this shell, not as a dashboard section. */
@@ -154,7 +176,7 @@ export default function Dashboard() {
       />
 
       {/* Offset by the sidebar width (268px) once the sidebar is pinned on desktop. */}
-      <div className="lg:pl-[268px]">
+      <div className="lg:pl-67">
         <DashboardNavbar
           onOpenSidebar={() => setNavOpen(true)}
           userName={user.adminName}
@@ -179,17 +201,7 @@ export default function Dashboard() {
               </div>
 
               <div className="hidden items-center gap-2 lg:flex">
-                <button
-                  type="button"
-                  aria-label="Notifications"
-                  className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-white text-ink-500 transition-colors hover:text-ink-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-                >
-                  <LuBell className="h-4.5 w-4.5" aria-hidden="true" />
-                  <span
-                    className="absolute top-2 right-2.5 h-1.5 w-1.5 rounded-full bg-brand-500"
-                    aria-hidden="true"
-                  />
-                </button>
+                <NotificationBell />
 
                 <Link
                   to="/chatbot"
