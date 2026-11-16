@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { ApiError, continueWithGoogle } from "../../../api/auth";
 import { AuthLayout } from "../../Components/AuthLayout";
@@ -171,6 +171,15 @@ export default function SignIn() {
           onChange={handleChange("password")}
           onBlur={markTouched("password")}
         />
+
+        <div className="-mt-1 flex justify-end">
+          <Link
+            to="/forgot-password"
+            className="text-[12.5px] font-medium text-brand-600 underline-offset-2 hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+          >
+            Forgot password?
+          </Link>
+        </div>
 
         {formError ? <FormAlert message={formError} /> : null}
 

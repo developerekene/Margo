@@ -1,140 +1,34 @@
 import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 
-import { LuCheck, LuMinus, LuPencil, LuPlus, LuX } from "react-icons/lu";
-import { useSelector } from "react-redux";
+import {
+  LuCheck,
+  LuChevronRight,
+  LuMinus,
+  LuPencil,
+  LuPlus,
+  LuX,
+} from "react-icons/lu";
+import { useDispatch, useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 
-import type { RootState } from "../../../Redux/Store";
+import {
+  billingSettingsSaved,
+  DEFAULT_SETTINGS,
+  type BillingCycle,
+  type BillingPlan,
+  type BillingSettings,
+  type FeatureValue,
+  type PlanLimits,
+} from "../../../Redux/Slices/billingslic";
+import type { AppDispatch, RootState } from "../../../Redux/Store";
+import { CURRENCY_OPTIONS, formatCount, formatMoney } from "./billingFormat";
 import { PlanCheckout } from "./BillingCheckout";
 import { BillingTransaction } from "./BillingTransaction";
 
 /* -------------------------------------------------------------------------- */
-/* Types                                                                      */
+/* Options                                                                    */
 /* -------------------------------------------------------------------------- */
-
-type FeatureValue = string | boolean;
-
-type BillingPlan = {
-  id: string;
-  name: string;
-  /** Monthly price per agent. */
-  price: number;
-  description: string;
-  popular: boolean;
-  features: Record<string, FeatureValue>;
-};
-
-type BillingSettings = {
-  /** Applied to the monthly price when annual billing is selected. */
-  annualDiscountPercent: number;
-  /** Row order for the comparison table; also the editable feature catalog. */
-  featureKeys: string[];
-  plans: BillingPlan[];
-};
-
-type BillingCycle = "monthly" | "annual";
-
-/* -------------------------------------------------------------------------- */
-/* Defaults                                                                   */
-/* -------------------------------------------------------------------------- */
-
-const DEFAULT_SETTINGS: BillingSettings = {
-  annualDiscountPercent: 10,
-  featureKeys: [
-    "Conversations",
-    "Channels",
-    "Voice",
-    "Captain AI",
-    "Help center",
-    "Teams",
-    "Automation rules",
-    "SSO / SAML",
-    "Audit logs",
-    "Data retention",
-  ],
-  plans: [
-    {
-      id: "starter",
-      name: "Starter",
-      price: 0,
-      description: "Up to 2 agents",
-      popular: false,
-      features: {
-        Conversations: "500 /month",
-        Channels: "Live chat",
-        Voice: false,
-        "Captain AI": false,
-        "Help center": false,
-        Teams: false,
-        "Automation rules": false,
-        "SSO / SAML": false,
-        "Audit logs": false,
-        "Data retention": "30 days",
-      },
-    },
-    {
-      id: "startups",
-      name: "Startups",
-      price: 19,
-      description: "Up to 2 agents",
-      popular: false,
-      features: {
-        Conversations: "Unlimited",
-        Channels: "All",
-        Voice: false,
-        "Captain AI": "300 credits",
-        "Help center": true,
-        Teams: false,
-        "Automation rules": false,
-        "SSO / SAML": false,
-        "Audit logs": false,
-        "Data retention": "1 year",
-      },
-    },
-    {
-      id: "business",
-      name: "Business",
-      price: 39,
-      description: "Up to 2 agents",
-      popular: true,
-      features: {
-        Conversations: "Unlimited",
-        Channels: "All",
-        Voice: true,
-        "Captain AI": "500 credits",
-        "Help center": true,
-        Teams: true,
-        "Automation rules": true,
-        "SSO / SAML": false,
-        "Audit logs": false,
-        "Data retention": "2 years",
-      },
-    },
-    {
-      id: "enterprise",
-      name: "Enterprise",
-      price: 99,
-      description: "Up to 2 agents",
-      popular: false,
-      features: {
-        Conversations: "Unlimited",
-        Channels: "All",
-        Voice: true,
-        "Captain AI": "800 credits",
-        "Help center": true,
-        Teams: true,
-        "Automation rules": true,
-        "SSO / SAML": true,
-        "Audit logs": true,
-        "Data retention": "3 years",
-      },
-    },
-  ],
-};
-
-/** Plans live in the browser until the billing API exists. */
-const STORAGE_KEY = "margo:billing";
 
 const CYCLE_OPTIONS: { id: BillingCycle; label: string }[] = [
   { id: "monthly", label: "Monthly" },
@@ -145,51 +39,8 @@ const CYCLE_OPTIONS: { id: BillingCycle; label: string }[] = [
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function isPlan(value: unknown): value is BillingPlan {
-  if (!value || typeof value !== "object") return false;
-
-  const plan = value as Partial<BillingPlan>;
-
-  return (
-    typeof plan.id === "string" &&
-    typeof plan.name === "string" &&
-    typeof plan.price === "number" &&
-    typeof plan.description === "string" &&
-    typeof plan.popular === "boolean" &&
-    typeof plan.features === "object" &&
-    plan.features !== null
-  );
-}
-
-function isSettings(value: unknown): value is BillingSettings {
-  if (!value || typeof value !== "object") return false;
-
-  const settings = value as Partial<BillingSettings>;
-
-  return (
-    typeof settings.annualDiscountPercent === "number" &&
-    Array.isArray(settings.featureKeys) &&
-    settings.featureKeys.every((key) => typeof key === "string") &&
-    Array.isArray(settings.plans) &&
-    settings.plans.length > 0 &&
-    settings.plans.every(isPlan)
-  );
-}
-
-function loadSettings(): BillingSettings {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return structuredClone(DEFAULT_SETTINGS);
-
-    const parsed: unknown = JSON.parse(raw);
-    return isSettings(parsed) ? parsed : structuredClone(DEFAULT_SETTINGS);
-  } catch {
-    return structuredClone(DEFAULT_SETTINGS);
-  }
-}
-
-function formatPrice(value: number) {
-  return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
+function formatPrice(value: number, currency: string) {
+  return formatMoney(value, currency, true);
 }
 
 /** Monthly price for the selected cycle, with the discount applied to annual. */
@@ -220,12 +71,14 @@ function PlanCard({
   plan,
   cycle,
   discount,
+  currency,
   featureKeys,
   onBuy,
 }: {
   plan: BillingPlan;
   cycle: BillingCycle;
   discount: number;
+  currency: string;
   featureKeys: string[];
   onBuy: (plan: BillingPlan) => void;
 }) {
@@ -254,7 +107,7 @@ function PlanCard({
 
         <div className="mt-2.5 flex items-end gap-1">
           <span className="text-[26px] leading-none font-bold text-ink-900">
-            {formatPrice(price)}
+            {formatPrice(price, currency)}
           </span>
           <span className="mb-0.5 text-[11px] text-ink-500">/agent/month</span>
         </div>
@@ -263,13 +116,23 @@ function PlanCard({
 
         {cycle === "annual" && !isFree ? (
           <p className="mt-1 text-[11px] text-brand-700">
-            Billed {formatPrice(annualTotal)}/agent per year
+            Billed {formatPrice(annualTotal, currency)}/agent per year
           </p>
         ) : null}
       </div>
 
       <div className="flex-1 p-4">
         <div className="space-y-2.5">
+          {/* Conversations come from the plan limits, never from the feature text. */}
+          <div className="flex items-center justify-between gap-2 text-[11.5px]">
+            <span className="min-w-0 text-ink-500">Conversations</span>
+            <span className="shrink-0 text-right text-ink-700">
+              {plan.limits.conversations === null
+                ? "Unlimited"
+                : `${formatCount(plan.limits.conversations)} /month`}
+            </span>
+          </div>
+
           {featureKeys.map((feature) => {
             const value = plan.features[feature];
 
@@ -346,6 +209,62 @@ function EditorField({
   );
 }
 
+/**
+ * One hard limit. An empty value means unlimited, which the Usage page
+ * renders as a plan without a cap.
+ */
+function LimitField({
+  label,
+  value,
+  step = 1,
+  hint,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  step?: number;
+  hint?: string;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <div>
+      <span className="mb-1 block text-[12px] font-medium text-ink-700">
+        {label}
+      </span>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={0}
+          step={step}
+          value={value ?? ""}
+          disabled={value === null}
+          placeholder="Unlimited"
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            onChange(Number.isFinite(next) ? Math.max(0, next) : 0);
+          }}
+          className={`${FIELD_INPUT} disabled:bg-slate-50 disabled:text-ink-400`}
+        />
+
+        <label className="flex shrink-0 items-center gap-1.5 text-[11.5px] text-ink-500">
+          <input
+            type="checkbox"
+            checked={value === null}
+            onChange={(event) => onChange(event.target.checked ? null : 0)}
+            className="h-3.5 w-3.5 accent-brand-500"
+          />
+          Unlimited
+        </label>
+      </div>
+
+      {hint ? (
+        <span className="mt-1 block text-[11px] text-ink-400">{hint}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function BillingEditor({
   settings,
   onClose,
@@ -397,9 +316,22 @@ function BillingEditor({
     }));
   }
 
+  function updateLimits(planId: string, patch: Partial<PlanLimits>) {
+    setDraft((current) => ({
+      ...current,
+      plans: current.plans.map((plan) =>
+        plan.id === planId
+          ? { ...plan, limits: { ...plan.limits, ...patch } }
+          : plan,
+      ),
+    }));
+  }
+
   function addFeature() {
     const key = newFeature.trim();
     if (!key || draft.featureKeys.includes(key)) return;
+    // Conversations are derived from the plan limits, not the feature list.
+    if (key.toLowerCase() === "conversations") return;
 
     setDraft((current) => ({
       ...current,
@@ -444,8 +376,8 @@ function BillingEditor({
               Edit billing plans
             </h2>
             <p className="mt-1 text-[12px] text-ink-500">
-              Admin only. Prices, discount and every feature value update the
-              plans immediately.
+              Admin only. Prices, currency, usage limits and every feature value
+              update the plans immediately.
             </p>
           </div>
 
@@ -460,7 +392,7 @@ function BillingEditor({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <EditorField
               label="Annual discount (%)"
               hint="Applied to the monthly price on the annual toggle."
@@ -482,6 +414,28 @@ function BillingEditor({
                 }}
                 className={FIELD_INPUT}
               />
+            </EditorField>
+
+            <EditorField
+              label="Billing currency"
+              hint="Used for plan prices, AI spend and invoices."
+            >
+              <select
+                value={draft.currency}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    currency: event.target.value,
+                  }))
+                }
+                className={FIELD_INPUT}
+              >
+                {CURRENCY_OPTIONS.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </EditorField>
 
             <div className="flex items-end">
@@ -589,6 +543,59 @@ function BillingEditor({
                 />
                 Mark as most popular
               </label>
+
+              <div className="mt-4 border-t border-line pt-3">
+                <p className="text-[12px] font-medium text-ink-700">
+                  Usage limits
+                </p>
+                <p className="mt-0.5 text-[11px] text-ink-400">
+                  The Usage page reads these values directly — there is no
+                  separate limit configuration.
+                </p>
+
+                <div className="mt-2.5 grid gap-3 sm:grid-cols-2">
+                  <LimitField
+                    label="Conversations per period"
+                    value={activePlan.limits.conversations}
+                    onChange={(value) =>
+                      updateLimits(activePlan.id, { conversations: value })
+                    }
+                  />
+
+                  <LimitField
+                    label="Table rows"
+                    value={activePlan.limits.tableRows}
+                    onChange={(value) =>
+                      updateLimits(activePlan.id, { tableRows: value })
+                    }
+                  />
+
+                  <LimitField
+                    label="Vector storage (MB)"
+                    value={activePlan.limits.vectorStorageMb}
+                    onChange={(value) =>
+                      updateLimits(activePlan.id, { vectorStorageMb: value })
+                    }
+                  />
+
+                  <LimitField
+                    label="File storage (MB)"
+                    value={activePlan.limits.fileStorageMb}
+                    onChange={(value) =>
+                      updateLimits(activePlan.id, { fileStorageMb: value })
+                    }
+                  />
+
+                  <LimitField
+                    label={`AI allowance (${draft.currency})`}
+                    value={activePlan.limits.aiSpend}
+                    step={0.01}
+                    onChange={(value) =>
+                      updateLimits(activePlan.id, { aiSpend: value })
+                    }
+                  />
+                </div>
+              </div>
 
               <div className="mt-4 border-t border-line pt-3">
                 <p className="text-[12px] font-medium text-ink-700">Features</p>
@@ -710,21 +717,15 @@ function BillingEditor({
  * the shell supplies the page heading, sidebar and navbar.
  */
 export function Billing() {
-  const [settings, setSettings] = useState<BillingSettings>(loadSettings);
+  const settings = useSelector((state: RootState) => state.billing);
+  const dispatch = useDispatch<AppDispatch>();
+
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [editorOpen, setEditorOpen] = useState(false);
   const [checkoutPlan, setCheckoutPlan] = useState<BillingPlan | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const email = useSelector((state: RootState) => state.auth.user?.email ?? "");
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    } catch {
-      // Private mode / quota — keep the in-memory settings working.
-    }
-  }, [settings]);
 
   const discount = settings.annualDiscountPercent;
 
@@ -768,13 +769,19 @@ export function Billing() {
             type="button"
             onClick={() => {
               const target =
-                settings.plans.find((plan) => plan.popular) ?? settings.plans[0];
+                settings.plans.find((plan) => plan.popular) ??
+                settings.plans[0];
               if (target) openCheckout(target);
             }}
             className={SECONDARY_BUTTON}
           >
             Change plan
           </button>
+
+          <Link to="/dashboard/usage" className={SECONDARY_BUTTON}>
+            View usage
+            <LuChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -815,6 +822,7 @@ export function Billing() {
             plan={plan}
             cycle={cycle}
             discount={discount}
+            currency={settings.currency}
             featureKeys={settings.featureKeys}
             onBuy={openCheckout}
           />
@@ -835,7 +843,7 @@ export function Billing() {
           settings={settings}
           onClose={() => setEditorOpen(false)}
           onSave={(next) => {
-            setSettings(next);
+            dispatch(billingSettingsSaved(next));
             setEditorOpen(false);
           }}
         />

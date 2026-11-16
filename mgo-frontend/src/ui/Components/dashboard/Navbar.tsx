@@ -1,7 +1,8 @@
-import { LuBell, LuMenu } from "react-icons/lu";
+import { LuMenu } from "react-icons/lu";
 import { Link } from "react-router-dom";
 
 import { MargoLogo } from "../MargoLogo";
+import { NotificationBell } from "./NotificationModel";
 
 type DashboardNavbarProps = {
   onOpenSidebar: () => void;
@@ -40,17 +41,7 @@ export function DashboardNavbar({
         </Link>
 
         <div className="ml-auto flex items-center gap-1.5">
-          <button
-            type="button"
-            aria-label="Notifications"
-            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-slate-100 hover:text-ink-900"
-          >
-            <LuBell className="h-4.5 w-4.5" aria-hidden="true" />
-            <span
-              className="absolute top-2 right-2.5 h-1.5 w-1.5 rounded-full bg-brand-500"
-              aria-hidden="true"
-            />
-          </button>
+          <NotificationBell />
 
           <span
             title={userName}
