@@ -64,7 +64,7 @@ async def _process(provider: str, event_id: str, event_type: str, apply) -> dict
 @router.post("/webhook/stripe", response_model=dict)
 async def stripe_webhook(
     request: Request,
-    stripe_signature: str = Header(..., alias="stripe-signature"),
+    stripe_signature: str | None = Header(None, alias="stripe-signature"),
 ) -> dict:
     """Receive and process Stripe webhook events (signature verified first)."""
     if not settings.STRIPE_WEBHOOK_SECRET:
@@ -73,7 +73,8 @@ async def stripe_webhook(
             message="Stripe webhook secret is not configured.",
             status_code=503,
         )
-
+    if not stripe_signature:
+        raise HTTPException(status_code=400, detail="Missing webhook signature.")
     # Raw bytes - signature verification needs the original payload.
     payload = await request.body()
 

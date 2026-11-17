@@ -252,6 +252,23 @@ _RATE_LIMIT_CODES = {"TOO_MANY_ATTEMPTS_TRY_LATER", "TOO_MANY_REQUESTS"}
 _INVALID_CREDENTIALS_MSG = "Invalid email or password."
 
 
+def _resend_verification_on_login(email: str, password: str) -> None:
+    """Best-effort resend of the verification email after an unverified login.
+
+    Shares the resend cooldown so repeated login attempts cannot be used to
+    spam an inbox. Never raises: the caller still returns 403.
+    """
+    now = datetime.now(UTC)
+    last_sent = _resend_cooldown.get(email)
+    if last_sent and (now - last_sent) < timedelta(seconds=_RESEND_COOLDOWN_SECONDS):
+        return
+    try:
+        send_email_verification(email, password)
+        _resend_cooldown[email] = now
+    except Exception:
+        logger.exception("Could not resend verification email on login")
+
+
 def login(payload: LoginRequest) -> AuthResult:
     """Authenticate with email + password via Firebase Identity Toolkit."""
     init_firebase()
@@ -271,7 +288,20 @@ def login(payload: LoginRequest) -> AuthResult:
 
         raise AppError("invalid_credentials", _INVALID_CREDENTIALS_MSG, 401)
 
-    claims = verify_token(signin["idToken"])
+    try:
+        claims = verify_token(signin["idToken"])
+    except ValueError as exc:
+        if str(exc).startswith("email_not_verified"):
+            # Password was right but the email is unverified: resend the
+            # link (best effort, cooldown-limited) and tell the client why.
+            _resend_verification_on_login(payload.email, payload.password)
+            raise AppError(
+                "email_not_verified",
+                "Please verify your email address. "
+                "We have sent you a new verification link.",
+                403,
+            )
+        raise AppError("unauthorized", "Invalid or expired token.", 401)
 
     # Reject tokens that have no role claim.
     if not claims.get("role"):
@@ -295,10 +325,8 @@ def login(payload: LoginRequest) -> AuthResult:
             )
         company_name = tenant_data.get("name")
 
-        # Flip an invited member's status to active on their first successful login.
-        # Also mark email_verified=True via Admin SDK — the invited user set their
-        # password via a reset link (not an email-verification link), so Firebase
-        # does not set email_verified automatically.  We are the trusted verifier here.
+        # Flip an invited member's status to active on their first successful
+        # login. (Invited users are created with email_verified=True.)
         uid = claims["uid"]
         member_ref = (
             db.collection("tenants")
@@ -311,26 +339,6 @@ def login(payload: LoginRequest) -> AuthResult:
             member_data = member_doc.to_dict()
             if member_data.get("status") == _MEMBER_STATUS_INVITED:
                 member_ref.update({"status": _MEMBER_STATUS_ACTIVE})
-                # Mark email as server-verified for invited users.
-                try:
-                    auth.update_user(uid, email_verified=True)
-                except Exception:
-                    logger.exception(
-                        "Failed to mark email_verified for invited uid=%s", uid
-                    )
-    else:
-        # Platform admin — no tenant.  Mark email_verified on first login if needed.
-        # Platform admins use a password-reset link; Firebase does not set
-        # email_verified for that flow.  The Admin SDK call here is trusted.
-        uid = claims["uid"]
-        try:
-            firebase_user = auth.get_user(uid)
-            if not firebase_user.email_verified:
-                auth.update_user(uid, email_verified=True)
-        except Exception:
-            logger.exception(
-                "Failed to mark email_verified for platform_admin uid=%s", uid
-            )
 
     return AuthResult(
         token=signin["idToken"],
@@ -420,10 +428,14 @@ def invite_user(
     throwaway_password = secrets.token_urlsafe(24)
 
     try:
+        # email_verified=True: the invitee proves they own the address by
+        # using the set-password link we email them. Without this, the
+        # verification gate in verify_token would lock them out at login.
         user = auth.create_user(
             email=payload.email,
             password=throwaway_password,
             display_name=payload.name,
+            email_verified=True,
         )
     except auth.EmailAlreadyExistsError:
         # Do not reveal which tenant owns the existing account.
@@ -784,10 +796,13 @@ def create_platform_admin(payload: PlatformAdminRequest) -> PlatformAdminRespons
     throwaway_password = secrets.token_urlsafe(24)
 
     try:
+        # Verified up front for the same reason as invited users: the
+        # set-password link is the proof of ownership.
         user = auth.create_user(
             email=payload.email,
             password=throwaway_password,
             display_name=payload.name,
+            email_verified=True,
         )
     except auth.EmailAlreadyExistsError:
         raise AppError(

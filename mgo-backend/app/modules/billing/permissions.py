@@ -9,11 +9,10 @@ from app.shared.auth import require_tenant_access
 
 
 def require_billing_access():
-    """Dependency for subscription reads and invoice history.
+    """Dependency for subscription reads.
 
     Allows: company_owner or company_admin of own tenant, or platform_admin.
-    Contract §3.2: GET /subscription and GET /invoices — owner/admin or
-    platform_admin.
+    Contract §3.2: GET /subscription — owner/admin or platform_admin.
     """
     return require_tenant_access(
         roles=["company_owner", "company_admin"],
@@ -22,10 +21,10 @@ def require_billing_access():
 
 
 def require_billing_owner():
-    """Dependency for checkout initiation.
+    """Dependency for checkout initiation and invoice history.
 
-    Allows: company_owner of own tenant only.
-    Contract §3.2: POST /checkout — owner only, not admin.
+    Allows: company_owner of own tenant only (not admin, not platform_admin).
+    Contract §3.2: POST /checkout and GET /invoices — owner only.
     """
     return require_tenant_access(
         roles=["company_owner"],

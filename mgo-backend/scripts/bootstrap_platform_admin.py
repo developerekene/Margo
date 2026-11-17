@@ -47,6 +47,11 @@ def main() -> None:
         required=True,
         help="Email address of the user to promote.",
     )
+    parser.add_argument(
+        "--mark-verified",
+        action="store_true",
+        help="Also mark the account's email as verified (you vouch for it).",
+    )
     args = parser.parse_args()
 
     init_firebase()
@@ -67,7 +72,18 @@ def main() -> None:
     # Explicitly remove tenant_id — platform admins are cross-tenant.
     new_claims.pop("tenant_id", None)
 
+    # An unverified account cannot log in (the email-verification gate), so
+    # refuse to promote one unless the operator vouches for the address.
+    if not user.email_verified and not args.mark_verified:
+        print(
+            "ERROR: this account's email is not verified, so it could not "
+            "log in. Re-run with --mark-verified if you trust this address."
+        )
+        sys.exit(1)
+
     auth.set_custom_user_claims(user.uid, new_claims)
+    if args.mark_verified and not user.email_verified:
+        auth.update_user(user.uid, email_verified=True)
 
     print(f"Success: uid={user.uid} email={args.email} is now a platform_admin.")
 

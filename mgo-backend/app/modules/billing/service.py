@@ -465,27 +465,25 @@ def list_invoices(
     """Return the tenant's invoices, newest first, from our own normalized
     records (written by the webhook handlers), never a raw provider payload.
 
-    cursor is the ISO date of the last item of the previous page.
+    cursor is an opaque token (the id of the last invoice of the previous
+    page). Resuming from that document's own position keeps paging correct
+    even when several invoices share a timestamp, and a cursor can only ever
+    point inside this tenant's invoices.
     """
-    query = (
-        get_db()
-        .collection(INVOICES)
-        .document(tenant_id)
-        .collection("items")
-        .order_by("date", direction="DESCENDING")
-    )
+    collection = get_db().collection(INVOICES).document(tenant_id).collection("items")
+    query = collection.order_by("date", direction="DESCENDING")
     if cursor:
-        try:
-            query = query.start_after({"date": datetime.fromisoformat(cursor)})
-        except ValueError:
+        anchor = collection.document(cursor).get()
+        if not anchor.exists:
             raise AppError(
                 code="invalid_cursor",
                 message="The pagination cursor is not valid.",
                 status_code=400,
             )
+        query = query.start_after(anchor)
 
     docs = query.limit(limit + 1).get()
     page, has_more = docs[:limit], len(docs) > limit
     items = [InvoiceItem(**d.to_dict()) for d in page]
-    next_cursor = items[-1].date.isoformat() if has_more and items else None
+    next_cursor = page[-1].id if has_more and page else None
     return InvoiceListResponse(invoices=items, next_cursor=next_cursor)
