@@ -66,6 +66,9 @@ class FakeDocRef:
             raise NotFound("no document to update")
         self._db.store[self.path] = _apply(self._db.store[self.path], data)
 
+    def delete(self):
+        self._db.store.pop(self.path, None)
+
 
 class FakeQuery:
     def __init__(self, collection, filters=(), order=None, after=None, limit=None):

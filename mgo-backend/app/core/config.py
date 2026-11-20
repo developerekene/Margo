@@ -89,5 +89,45 @@ class Settings(BaseSettings):
     #  "crawl_pages": 100, "monthly_messages": 500, "widget_domains": 1}}}
     BILLING_PLANS_JSON: str = ""
 
+    # ---------------------------------------------------------------------------
+    # Knowledge ingestion (BE-005)
+    # ---------------------------------------------------------------------------
+
+    # GCP project and Cloud Tasks region.
+    GCP_PROJECT: str = ""
+    GCP_LOCATION: str = "us-central1"
+
+    # Cloud Tasks queue names (provisioned by BE-010 / infra).
+    CLOUD_TASKS_CRAWL_QUEUE: str = "crawl-pages"
+    CLOUD_TASKS_DOC_QUEUE: str = "document-processing"
+
+    # Public base URL of this API service (no trailing slash).
+    # Cloud Tasks uses this to build the internal callback URLs.
+    # Example: https://margo-api.onrender.com
+    KNOWLEDGE_BASE_URL: str = ""
+
+    # Service account email that signs Cloud Tasks OIDC tokens.
+    KNOWLEDGE_TASK_SA_EMAIL: str = ""
+
+    # Expected `aud` claim in inbound OIDC tokens.
+    # Set to the same value as KNOWLEDGE_BASE_URL.
+    KNOWLEDGE_OIDC_AUDIENCE: str = ""
+
+    # Cloud Storage bucket for uploaded documents (provisioned by BE-010 / infra).
+    GCS_BUCKET: str = ""
+
+    # Maximum upload size for documents, in megabytes.
+    KNOWLEDGE_MAX_UPLOAD_MB: int = 20
+
+    # Hard cap on pages discovered per crawl request.
+    KNOWLEDGE_MAX_CRAWL_PAGES: int = 100
+
+    # Maximum extracted text length in characters (prevents embedding overload).
+    KNOWLEDGE_MAX_CONTENT_CHARS: int = 500_000
+
+    # Per-page HTTP timeout for the crawler, in seconds.
+    KNOWLEDGE_CRAWL_TIMEOUT_SECONDS: int = 10
+
+
 # Instantiate settings once for application-wide use.
 settings = Settings()
