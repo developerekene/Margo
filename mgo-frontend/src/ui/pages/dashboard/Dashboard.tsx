@@ -103,13 +103,17 @@ const AGENT_EDITOR_PATTERN = "/dashboard/agent/:agentId/edit";
 
 /** "Amina Bello" -> "AB" — falls back to the first two characters. */
 function getInitials(name: string) {
+  const trimmed = (name ?? "").trim();
+
+  if (!trimmed) return "?";
+
   return (
-    name
+    trimmed
       .split(" ")
       .filter(Boolean)
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || name.slice(0, 2).toUpperCase()
+      .join("") || trimmed.slice(0, 2).toUpperCase()
   );
 }
 
@@ -133,7 +137,7 @@ export default function Dashboard() {
 
   if (!user) return null;
 
-  const initials = getInitials(user.adminName);
+  const initials = getInitials(user.admin_name);
   const isNewAgent = location.pathname === "/dashboard/agent/new";
   const isAgentEditor =
     isNewAgent || Boolean(matchPath(AGENT_EDITOR_PATTERN, location.pathname));
@@ -150,7 +154,7 @@ export default function Dashboard() {
       ? "Create agent"
       : "Customize agent"
     : isOverview
-      ? `Welcome back, ${user.adminName}`
+      ? `Welcome back, ${user.admin_name}`
       : (page?.title ?? currentSection);
   const description = isAgentEditor
     ? "Set up how your agent introduces itself, responds, and looks on your website."
@@ -164,13 +168,14 @@ export default function Dashboard() {
   }
 
   return (
+
     <div className="min-h-screen bg-slate-50/70">
       <Sidebar
         open={navOpen}
         onClose={() => setNavOpen(false)}
-        companyName={user.companyName}
-        adminName={user.adminName}
-        email={user.email}
+        companyName={user.company_name}
+        adminName={user.admin_name}
+        email={user.company_email}
         initials={initials}
         onSignOut={signOut}
       />
@@ -179,7 +184,7 @@ export default function Dashboard() {
       <div className="lg:pl-67">
         <DashboardNavbar
           onOpenSidebar={() => setNavOpen(true)}
-          userName={user.adminName}
+          userName={user.admin_name}
           initials={initials}
         />
 
@@ -211,7 +216,7 @@ export default function Dashboard() {
                 </Link>
 
                 <span
-                  title={user.adminName}
+                  title={user.admin_name}
                   className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500 text-[12.5px] font-semibold text-white"
                 >
                   {initials}

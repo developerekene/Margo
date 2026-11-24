@@ -19,7 +19,6 @@ import {
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 
-import { ApiError } from "../../../api/client";
 import {
   buildBillingPeriods,
   getSubscription,
@@ -63,7 +62,7 @@ const STATUS_LABELS: Record<Subscription["status"], string> = {
 /* -------------------------------------------------------------------------- */
 
 function describeError(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error && error.message) return error.message;
   return "We couldn't load your usage. Please try again.";
 }
 

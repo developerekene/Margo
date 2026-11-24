@@ -67,6 +67,24 @@ const EMPTY_FORM: MemberForm = {
   permissions: { ...NO_ACCESS },
 };
 
+/** Keep the owner row in sync with the signed-in account. */
+function withOwnerIdentity(
+  members: TeamMember[],
+  user: RootState["auth"]["user"],
+): TeamMember[] {
+  if (!user) return members;
+
+  return members.map((member) =>
+    member.id === "owner"
+      ? {
+          ...member,
+          name: user.admin_name || member.name,
+          email: user.company_email || member.email,
+        }
+      : member,
+  );
+}
+
 const STORAGE_KEY = "margo:team";
 
 /* -------------------------------------------------------------------------- */
@@ -88,8 +106,8 @@ function seedMembers(user: RootState["auth"]["user"]): TeamMember[] {
   return [
     {
       id: "owner",
-      name: user?.adminName ?? "Workspace owner",
-      email: user?.email ?? "owner@example.com",
+      name: user?.admin_name ?? "Workspace owner",
+      email: user?.company_email ?? "owner@example.com",
       role: "admin",
       permissions: { ...FULL_ACCESS },
     },
@@ -243,7 +261,7 @@ export function Team() {
   const user = useSelector((state: RootState) => state.auth.user);
 
   const [members, setMembers] = useState<TeamMember[]>(() =>
-    loadMembers(seedMembers(user)),
+    withOwnerIdentity(loadMembers(seedMembers(user)), user),
   );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);

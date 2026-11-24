@@ -2,11 +2,11 @@ import { useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { ApiError, continueWithGoogle } from "../../../api/auth";
+import { getApiErrorMessage, useLoginMutation } from "../../../api/endpoints";
 import { AuthLayout } from "../../Components/AuthLayout";
 import { FormAlert } from "../../Components/FormAlert";
 import { useDispatch } from "react-redux";
-import { signin } from "../../../Redux/Slices/authslic";
+import { loginSucceeded } from "../../../Redux/Slices/authslic";
 import {
   EyeIcon,
   EyeOffIcon,
@@ -18,7 +18,6 @@ import { TextField } from "../../Components/TextField";
 
 type FieldName = "email" | "password";
 type FormValues = Record<FieldName, string>;
-type Provider = "email" | "google";
 
 const EMPTY_VALUES: FormValues = { email: "", password: "" };
 const FIELD_ORDER: FieldName[] = ["email", "password"];
@@ -48,15 +47,22 @@ export default function SignIn() {
   const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>(
     {},
   );
-  const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [provider, setProvider] = useState<Provider>("email");
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+
+  // RTK Query owns the request: `login()` posts, `submitting` is in-flight.
+  const [login, { isLoading: submitting }] = useLoginMutation();
 
   const errors = validate(values);
   const errorFor = (name: FieldName) =>
     touched[name] ? errors[name] : undefined;
+
+  // Carry whatever the user typed into the verification page.
+  const typedEmail = values.email.trim();
+  const verificationHref = typedEmail
+    ? `/verify-email?email=${encodeURIComponent(typedEmail)}`
+    : "/verify-email";
 
   const handleChange =
     (name: FieldName) => (event: ChangeEvent<HTMLInputElement>) =>
@@ -65,33 +71,28 @@ export default function SignIn() {
   const markTouched = (name: FieldName) => () =>
     setTouched((prev) => ({ ...prev, [name]: true }));
 
-  async function submit(method: Provider) {
-    setProvider(method);
-    setSubmitting(true);
+  async function submitEmail() {
     setFormError(null);
 
     try {
-      if (method === "google") {
-        await continueWithGoogle();
-      } else {
-        const signinData = {
-          email: values.email.trim(),
-          password: values.password,
-        };
+      const session = await login({
+        email: values.email.trim(),
+        password: values.password,
+      }).unwrap();
 
-        console.log("Signin data:", signinData);
-
-        dispatch(signin({ email: signinData.email }));
-      }
+      dispatch(loginSucceeded(session));
       navigate("/dashboard");
+      console.log("login successful", values.email, session);
     } catch (error) {
-      setFormError(
-        error instanceof ApiError
-          ? error.message
-          : "Something went wrong. Please try again.",
-      );
-      setSubmitting(false);
+      setFormError(getApiErrorMessage(error));
     }
+  }
+
+  // The backend has no Google OAuth flow yet.
+  function handleGoogle() {
+    setFormError(
+      "Google sign-in isn't connected yet. Use your email and password.",
+    );
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -102,7 +103,7 @@ export default function SignIn() {
 
     const firstInvalid = FIELD_ORDER.find((key) => errors[key]);
     if (!firstInvalid) {
-      void submit("email");
+      void submitEmail();
       return;
     }
 
@@ -188,7 +189,7 @@ export default function SignIn() {
           disabled={submitting}
           className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-500 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 active:bg-brand-700 disabled:cursor-not-allowed disabled:bg-brand-500 disabled:opacity-60"
         >
-          {submitting && provider === "email" ? (
+          {submitting ? (
             <>
               <Spinner className="h-4 w-4" />
               Signing in…
@@ -209,17 +210,23 @@ export default function SignIn() {
         <button
           type="button"
           disabled={submitting}
-          onClick={() => void submit("google")}
+          onClick={handleGoogle}
           className="flex h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-line bg-white text-[14px] font-medium text-ink-900 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting && provider === "google" ? (
-            <Spinner className="h-4 w-4 text-ink-500" />
-          ) : (
-            <GoogleIcon className="h-4.5 w-4.5" />
-          )}
+          <GoogleIcon className="h-4.5 w-4.5" />
           Continue with Google
         </button>
       </form>
+
+      <p className="mt-4 text-center text-[13px] text-ink-500">
+        Need to verify your email?{" "}
+        <Link
+          to={verificationHref}
+          className="font-semibold text-brand-600 underline-offset-2 hover:text-brand-700 hover:underline"
+        >
+          Resend the link
+        </Link>
+      </p>
 
       <p className="mt-6 text-center text-[13px] text-ink-500">
         New to Margo?{" "}

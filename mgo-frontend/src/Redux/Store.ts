@@ -1,8 +1,6 @@
 import { configureStore } from "@reduxjs/toolkit";
-import agentReducer, {
-  agentsReducer,
-  persistAgents,
-} from "./Slices/agentslic";
+import agentReducer, { agentsReducer, persistAgents } from "./Slices/agentslic";
+import { api } from "../api/endpoints";
 import authReducer from "./Slices/authslic";
 import billingReducer, { persistBillingSettings } from "./Slices/billingslic";
 import chatReducer from "./Slices/chatslic";
@@ -10,13 +8,17 @@ import notificationsReducer from "./Slices/notificationslic";
 
 export const store = configureStore({
   reducer: {
+    auth: authReducer,
+    [api.reducerPath]: api.reducer,
     agent: agentReducer,
     agents: agentsReducer,
-    auth: authReducer,
     billing: billingReducer,
     chat: chatReducer,
     notifications: notificationsReducer,
   },
+
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(api.middleware),
 });
 
 // Persist the agent list whenever it changes, so saved agents survive a reload.

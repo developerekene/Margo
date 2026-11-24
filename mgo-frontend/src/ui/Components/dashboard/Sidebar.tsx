@@ -111,7 +111,7 @@ type SidebarProps = {
 export function Sidebar({
   open,
   onClose,
-
+  companyName,
   adminName,
   email,
   initials,
@@ -148,24 +148,32 @@ export function Sidebar({
         }`}
       >
         {/* Brand */}
-        <div className="flex items-center justify-between gap-2 px-4 pt-4">
-          <NavLink
-            to="/dashboard"
-            onClick={onClose}
-            aria-label="Margo dashboard"
-            className="rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-          >
-            <MargoLogo size="sm" />
-          </NavLink>
+        <div className="px-4 pt-4">
+          <div className="flex items-center justify-between gap-2">
+            <NavLink
+              to="/dashboard"
+              onClick={onClose}
+              aria-label="Margo dashboard"
+              className="rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            >
+              <MargoLogo size="sm" />
+            </NavLink>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close navigation"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-slate-100 hover:text-ink-900 lg:hidden"
-          >
-            <LuX className="h-4 w-4" aria-hidden="true" />
-          </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close navigation"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-slate-100 hover:text-ink-900 lg:hidden"
+            >
+              <LuX className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          {companyName ? (
+            <p className="mt-2 truncate text-[12px] font-medium text-ink-500">
+              {companyName}
+            </p>
+          ) : null}
         </div>
 
         {/* Navigation */}
