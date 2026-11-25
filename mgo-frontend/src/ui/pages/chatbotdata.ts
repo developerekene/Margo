@@ -1,5 +1,4 @@
-import { call } from "../../api/client";
-import { endpoints } from "../../api/endpoints";
+import { API_BASE } from "../../api/endpoints";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
@@ -85,7 +84,8 @@ export const initialMessages: ChatMessage[] = [
 
 /**
  * `true`  → answer from the canned lines below, so the widget runs with no backend.
- * `false` → POST to `/api/v1/chat/messages` (see `endpoints.chat.sendMessage`).
+ * `false` → POST `/api/v1/chat/messages` (the chat module is still a stub on the
+ *           backend, so leave this `true` until that route exists).
  */
 export const USE_FAKE_REPLIES = true;
 
@@ -115,6 +115,12 @@ const FALLBACK_REPLY =
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Shape every Margo endpoint replies with. */
+type ChatEnvelope = {
+  data?: { reply?: string } | null;
+  error?: { message?: string } | null;
+};
+
 /** Send one visitor message and return the assistant's reply text. */
 export async function sendChatMessage(text: string): Promise<string> {
   if (USE_FAKE_REPLIES) {
@@ -124,6 +130,22 @@ export async function sendChatMessage(text: string): Promise<string> {
     );
   }
 
-  const { reply } = await call(endpoints.chat.sendMessage, { text });
-  return reply;
+  const response = await fetch(`${API_BASE}/api/v1/chat/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+
+  const payload = (await response
+    .json()
+    .catch(() => null)) as ChatEnvelope | null;
+
+  if (!response.ok || payload?.error || !payload?.data?.reply) {
+    throw new Error(
+      payload?.error?.message ??
+        "The assistant is unavailable right now. Please try again.",
+    );
+  }
+
+  return payload.data.reply;
 }

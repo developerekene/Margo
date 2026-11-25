@@ -1,16 +1,20 @@
 import { useId, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
-import { useDispatch } from "react-redux";
-import { signup } from "../../../Redux/Slices/authslic";
-
-import { ApiError } from "../../../api/auth";
 import { useNavigate } from "react-router-dom";
+import { useDispatch } from "react-redux";
+
+import {
+  getApiErrorMessage,
+  useRegisterMutation,
+} from "../../../api/endpoints";
+import { signupSuccess } from "../../../Redux/Slices/authslic";
 import { AuthLayout } from "../../Components/AuthLayout";
 import { FormAlert } from "../../Components/FormAlert";
 import {
   AlertCircleIcon,
   CheckIcon,
+  CircleCheckIcon,
   EyeIcon,
   EyeOffIcon,
   GoogleIcon,
@@ -29,7 +33,9 @@ type FieldName =
 type FieldKey = FieldName | "terms";
 type FormValues = Record<FieldName, string>;
 type FormErrors = Partial<Record<FieldKey, string>>;
-type Provider = "email" | "google";
+
+/** What the backend returns once the tenant + owner account exist. */
+type PendingRegistration = { message: string; email: string };
 
 /** Order used to focus the first invalid field on submit. */
 const FIELD_ORDER: FieldKey[] = [
@@ -166,19 +172,22 @@ function validate(values: FormValues, agreedToTerms: boolean): FormErrors {
 }
 
 export default function Signup() {
-  const dispatch = useDispatch();
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<FieldKey, boolean>>>(
     {},
   );
-  const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [provider, setProvider] = useState<Provider>("email");
+  /** Set once the backend accepts the registration — no token is issued yet. */
+  const [pending, setPending] = useState<PendingRegistration | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const termsErrorId = useId();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+
+  // RTK Query owns the request: `register()` posts, `submitting` is in-flight.
+  const [register, { isLoading: submitting }] = useRegisterMutation();
 
   const errors = useMemo(
     () => validate(values, agreedToTerms),
@@ -197,31 +206,44 @@ export default function Signup() {
   const markTouched = (name: FieldKey) => () =>
     setTouched((prev) => ({ ...prev, [name]: true }));
 
-  async function submit(method: Provider) {
-    setProvider(method);
-    setSubmitting(true);
+  // Registration is submitted via the RTK Query mutation, then stored in the
+  // auth slice so the workspace survives until the email is verified.
+  async function submitEmail() {
     setFormError(null);
 
     try {
-      const signupData = {
-        adminName: values["admin name"].trim(),
-        companyName: values["company name"].trim(),
-        websiteUrl: values["website url"].trim(),
-        email: values.email.trim(),
+      const result = await register({
+        company_name: values["company name"].trim(),
+        company_email: values.email.trim(),
+        admin_name: values["admin name"].trim(),
         password: values.password,
-      };
-      console.log("Signup data:", signupData);
-      dispatch(signup(signupData));
+        website_url: values["website url"].trim() || undefined,
+      }).unwrap();
 
-      navigate("/signin");
-    } catch (error) {
-      setFormError(
-        error instanceof ApiError
-          ? error.message
-          : "Something went wrong. Please try again.",
+      // No session yet — only remember what the account was created for.
+      dispatch(
+        signupSuccess({
+          company_name: values["company name"].trim(),
+          company_email: result.email || values.email.trim(),
+          admin_name: values["admin name"].trim(),
+          website_url: values["website url"].trim(),
+        }),
       );
-      setSubmitting(false);
+
+      setPending({
+        message: result.message,
+        email: result.email || values.email.trim(),
+      });
+    } catch (error) {
+      setFormError(getApiErrorMessage(error));
     }
+  }
+
+  // The backend has no Google OAuth flow yet.
+  function handleGoogle() {
+    setFormError(
+      "Google sign-up isn't connected yet. Create your account with your work email.",
+    );
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -242,7 +264,7 @@ export default function Signup() {
     const firstInvalid = FIELD_ORDER.find((key) => nextErrors[key]);
 
     if (!firstInvalid) {
-      void submit("email");
+      void submitEmail();
       return;
     }
 
@@ -272,6 +294,52 @@ export default function Signup() {
       )}
     </button>
   );
+
+  // Registration succeeded: the backend emailed a verification link and issued
+  // no session, so point the user at their inbox instead of the dashboard.
+  if (pending) {
+    return (
+      <AuthLayout
+        footer={
+          <>
+            <CheckIcon className="h-3.5 w-3.5 text-brand-500" />
+            Free 14-day trial · No credit card required
+          </>
+        }
+      >
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-50 text-brand-600">
+          <CircleCheckIcon className="h-6 w-6" />
+        </div>
+
+        <h1 className="mt-4 text-[24px] font-semibold tracking-tight text-ink-900 sm:text-[26px]">
+          Check your email
+        </h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-ink-500">
+          {pending.message ||
+            `We sent a verification link to ${pending.email}. Open it to activate your Margo workspace, then sign in.`}
+        </p>
+
+        <button
+          type="button"
+          onClick={() => navigate("/signin")}
+          className="mt-7 flex h-11 w-full items-center justify-center rounded-lg bg-brand-500 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 active:bg-brand-700"
+        >
+          Go to sign in
+        </button>
+
+        <p className="mt-6 text-center text-[13px] text-ink-500">
+          Wrong address?{" "}
+          <button
+            type="button"
+            onClick={() => setPending(null)}
+            className="font-semibold text-brand-600 underline-offset-2 hover:text-brand-700 hover:underline"
+          >
+            Use a different email
+          </button>
+        </p>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout
@@ -432,7 +500,7 @@ export default function Signup() {
           disabled={submitting}
           className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-500 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 active:bg-brand-700 disabled:cursor-not-allowed disabled:bg-brand-500 disabled:opacity-60"
         >
-          {submitting && provider === "email" ? (
+          {submitting ? (
             <>
               <Spinner className="h-4 w-4" />
               Creating account…
@@ -453,14 +521,10 @@ export default function Signup() {
         <button
           type="button"
           disabled={submitting}
-          onClick={() => void submit("google")}
+          onClick={handleGoogle}
           className="flex h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-line bg-white text-[14px] font-medium text-ink-900 transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting && provider === "google" ? (
-            <Spinner className="h-4 w-4 text-ink-500" />
-          ) : (
-            <GoogleIcon className="h-4.5 w-4.5" />
-          )}
+          <GoogleIcon className="h-4.5 w-4.5" />
           Continue with Google
         </button>
       </form>

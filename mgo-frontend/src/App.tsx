@@ -12,6 +12,9 @@ const Home = lazy(() => import("./ui/pages/Home"));
 const Signup = lazy(() => import("./ui/pages/auth/Signup"));
 const Signin = lazy(() => import("./ui/pages/auth/SignIn"));
 const ForgetPassword = lazy(() => import("./ui/pages/auth/ForgetPassword"));
+const EmailVerification = lazy(
+  () => import("./ui/pages/auth/EmailVerification"),
+);
 const CreateNewPassword = lazy(
   () => import("./ui/pages/auth/CreatenewPassword"),
 );
@@ -56,6 +59,7 @@ function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/signin" element={<Signin />} />
           <Route path="/forgot-password" element={<ForgetPassword />} />
+          <Route path="/verify-email" element={<EmailVerification />} />
           <Route path="/reset-password" element={<CreateNewPassword />} />
           <Route path="/create-new-password" element={<CreateNewPassword />} />
           <Route path="/pricing" element={<Pricing />} />

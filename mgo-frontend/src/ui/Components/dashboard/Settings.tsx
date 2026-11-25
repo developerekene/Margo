@@ -5,8 +5,6 @@ import type { IconType } from "react-icons";
 import {
   LuBell,
   LuBuilding2,
-  LuEye,
-  LuEyeOff,
   LuLock,
   LuSave,
   LuTrash2,
@@ -19,9 +17,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import {
+  getApiErrorMessage,
+  useForgotPasswordMutation,
+} from "../../../api/endpoints";
+import {
   logout,
-  passwordChanged,
   profileUpdated,
+  type User,
 } from "../../../Redux/Slices/authslic";
 import type { RootState } from "../../../Redux/Store";
 import { TextField } from "../TextField";
@@ -64,27 +66,9 @@ type WorkspaceSettings = {
   notifications: NotificationPrefs;
 };
 
-type ProfilePatch = {
-  adminName?: string;
-  companyName?: string;
-  websiteUrl?: string;
-};
-
 type WorkspaceErrors = {
   companyName?: string;
   websiteUrl?: string;
-};
-
-type PasswordErrors = {
-  current?: string;
-  next?: string;
-  confirm?: string;
-};
-
-type PasswordForm = {
-  current: string;
-  next: string;
-  confirm: string;
 };
 
 const STORAGE_KEY = "margo:settings";
@@ -137,12 +121,6 @@ const TIMEZONES = [
   "Asia/Singapore",
   "Australia/Sydney",
 ];
-
-const EMPTY_PASSWORD_FORM: PasswordForm = {
-  current: "",
-  next: "",
-  confirm: "",
-};
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
@@ -214,9 +192,9 @@ function loadSettings(
   user: RootState["auth"]["user"],
 ): WorkspaceSettings {
   const fallback: WorkspaceSettings = {
-    adminName: user?.adminName ?? "",
-    companyName: user?.companyName ?? "",
-    websiteUrl: user?.websiteUrl ?? "",
+    adminName: user?.admin_name ?? "",
+    companyName: user?.company_name ?? "",
+    websiteUrl: user?.website_url ?? "",
     timezone: defaultTimezone(),
     notifications: { ...DEFAULT_NOTIFICATIONS },
   };
@@ -360,47 +338,6 @@ function SelectField({
   );
 }
 
-function PasswordField({
-  label,
-  value,
-  error,
-  autoComplete,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  error?: string;
-  autoComplete: string;
-  onChange: (value: string) => void;
-}) {
-  const [visible, setVisible] = useState(false);
-
-  return (
-    <TextField
-      label={label}
-      type={visible ? "text" : "password"}
-      value={value}
-      error={error}
-      autoComplete={autoComplete}
-      onChange={(event) => onChange(event.target.value)}
-      trailing={
-        <button
-          type="button"
-          onClick={() => setVisible((current) => !current)}
-          aria-label={visible ? `Hide ${label}` : `Show ${label}`}
-          className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-lg text-ink-400 transition-colors hover:text-ink-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-        >
-          {visible ? (
-            <LuEyeOff className="h-4 w-4" aria-hidden="true" />
-          ) : (
-            <LuEye className="h-4 w-4" aria-hidden="true" />
-          )}
-        </button>
-      }
-    />
-  );
-}
-
 function ToggleRow({
   label,
   description,
@@ -456,8 +393,8 @@ function ToggleRow({
 /**
  * Settings — workspace profile, notification preferences, password and the
  * danger zone. Profile edits update the auth slice (so the sidebar follows);
- * everything is persisted to `localStorage["margo:settings"]` until the API
- * lands.
+ * they are persisted to `localStorage["margo:settings"]` until the profile API
+ * lands, while the password reset goes through the real identity endpoint.
  */
 export function Settings() {
   const dispatch = useDispatch();
@@ -469,24 +406,22 @@ export function Settings() {
   );
   const [workspaceErrors, setWorkspaceErrors] = useState<WorkspaceErrors>({});
   const [profileError, setProfileError] = useState<string | undefined>();
-  const [passwordForm, setPasswordForm] = useState<PasswordForm>(
-    EMPTY_PASSWORD_FORM,
-  );
-  const [passwordErrors, setPasswordErrors] = useState<PasswordErrors>({});
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [forgotPassword, { isLoading: sendingReset }] =
+    useForgotPasswordMutation();
 
   // Re-apply a saved profile on reload so the shell shows the same name.
   useEffect(() => {
     if (!user) return;
 
-    const patch: ProfilePatch = {};
-    if (settings.adminName && settings.adminName !== user.adminName)
-      patch.adminName = settings.adminName;
-    if (settings.companyName && settings.companyName !== user.companyName)
-      patch.companyName = settings.companyName;
-    if (settings.websiteUrl !== user.websiteUrl)
-      patch.websiteUrl = settings.websiteUrl;
+    const patch: Partial<User> = {};
+    if (settings.adminName && settings.adminName !== user.admin_name)
+      patch.admin_name = settings.adminName;
+    if (settings.companyName && settings.companyName !== user.company_name)
+      patch.company_name = settings.companyName;
+    if (settings.websiteUrl !== user.website_url)
+      patch.website_url = settings.websiteUrl;
 
     if (Object.keys(patch).length > 0) dispatch(profileUpdated(patch));
   }, [
@@ -540,7 +475,7 @@ export function Settings() {
 
     const next = updateSettings({ adminName });
     persistSettings(next);
-    dispatch(profileUpdated({ adminName }));
+    dispatch(profileUpdated({ admin_name: adminName }));
 
     toast.success("Profile updated", {
       description: "Your name was saved across your workspace.",
@@ -566,7 +501,9 @@ export function Settings() {
 
     const next = updateSettings({ companyName, websiteUrl });
     persistSettings(next);
-    dispatch(profileUpdated({ companyName, websiteUrl }));
+    dispatch(
+      profileUpdated({ company_name: companyName, website_url: websiteUrl }),
+    );
 
     toast.success("Workspace updated", {
       description: "Your workspace details were saved.",
@@ -584,37 +521,27 @@ export function Settings() {
     persistSettings(next);
   }
 
-  function changePassword(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  // The backend has no change-password route; it emails a Firebase reset link.
+  async function sendPasswordReset() {
+    const email = user?.company_email?.trim();
 
-    const current = passwordForm.current;
-    const nextPassword = passwordForm.next;
-    const nextErrors: PasswordErrors = {};
+    if (!email) {
+      toast.error("No account email", {
+        description: "Sign in again to reset your password.",
+      });
+      return;
+    }
 
-    if (!current) nextErrors.current = "Enter your current password.";
-    else if (user?.password && current !== user.password)
-      nextErrors.current = "That doesn't match your current password.";
-
-    if (!nextPassword) nextErrors.next = "Enter a new password.";
-    else if (nextPassword.length < 8)
-      nextErrors.next = "Use at least 8 characters.";
-    else if (nextPassword === current)
-      nextErrors.next = "Choose a password you haven't used here.";
-
-    if (!passwordForm.confirm)
-      nextErrors.confirm = "Re-enter your new password.";
-    else if (passwordForm.confirm !== nextPassword)
-      nextErrors.confirm = "Passwords don't match.";
-
-    setPasswordErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
-
-    dispatch(passwordChanged({ password: nextPassword }));
-    setPasswordForm(EMPTY_PASSWORD_FORM);
-
-    toast.success("Password updated", {
-      description: "You'll stay signed in on this device.",
-    });
+    try {
+      await forgotPassword({ email }).unwrap();
+      toast.success("Reset link sent", {
+        description: `Check ${email} for the link to choose a new password.`,
+      });
+    } catch (error) {
+      toast.error("Couldn't send the reset link", {
+        description: getApiErrorMessage(error),
+      });
+    }
   }
 
   function deleteWorkspace(event: FormEvent<HTMLFormElement>) {
@@ -665,7 +592,7 @@ export function Settings() {
         >
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-500 text-[15px] font-semibold text-white">
-              {initials(settings.adminName || user?.adminName || "")}
+              {initials(settings.adminName || user?.admin_name || "")}
             </span>
 
             <div className="min-w-0">
@@ -673,7 +600,7 @@ export function Settings() {
                 {settings.adminName || "Workspace owner"}
               </p>
               <p className="truncate text-[12px] text-ink-400">
-                {user?.email ?? "owner@example.com"}
+                {user?.company_email ?? "owner@example.com"}
               </p>
             </div>
 
@@ -699,9 +626,9 @@ export function Settings() {
 
             <TextField
               label="Email address"
-              value={user?.email ?? ""}
+              value={user?.company_email ?? ""}
               disabled
-              hint="Contact support to change the email on your account."
+              hint="This is the address you sign in with and receive billing receipts on."
             />
           </div>
         </SettingsCard>
@@ -805,60 +732,35 @@ export function Settings() {
       </SettingsCard>
 
       {/* Password */}
-      <form onSubmit={changePassword}>
-        <SettingsCard
-          icon={LuLock}
-          title="Password"
-          description="Use at least 8 characters and something you don't reuse."
-          footer={
-            <>
-              <span className="text-[12px] text-ink-400">
-                You'll stay signed in on this device.
-              </span>
+      <SettingsCard
+        icon={LuLock}
+        title="Password"
+        description="We email you a secure link whenever you want to change it."
+        footer={
+          <>
+            <span className="text-[12px] text-ink-400">
+              The link is sent to{" "}
+              {user?.company_email ?? "your account email"}.
+            </span>
 
-              <button type="submit" className={PRIMARY_BUTTON}>
-                <LuSave className="h-4 w-4" aria-hidden="true" />
-                Update password
-              </button>
-            </>
-          }
-        >
-          <PasswordField
-            label="Current password"
-            value={passwordForm.current}
-            error={passwordErrors.current}
-            autoComplete="current-password"
-            onChange={(value) =>
-              setPasswordForm((current) => ({
-                ...current,
-                current: value,
-              }))
-            }
-          />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <PasswordField
-              label="New password"
-              value={passwordForm.next}
-              error={passwordErrors.next}
-              autoComplete="new-password"
-              onChange={(value) =>
-                setPasswordForm((current) => ({ ...current, next: value }))
-              }
-            />
-
-            <PasswordField
-              label="Confirm new password"
-              value={passwordForm.confirm}
-              error={passwordErrors.confirm}
-              autoComplete="new-password"
-              onChange={(value) =>
-                setPasswordForm((current) => ({ ...current, confirm: value }))
-              }
-            />
-          </div>
-        </SettingsCard>
-      </form>
+            <button
+              type="button"
+              onClick={() => void sendPasswordReset()}
+              disabled={sendingReset}
+              className={PRIMARY_BUTTON}
+            >
+              <LuLock className="h-4 w-4" aria-hidden="true" />
+              {sendingReset ? "Sending…" : "Send reset link"}
+            </button>
+          </>
+        }
+      >
+        <p className="text-[12.5px] leading-relaxed text-ink-500">
+          Passwords are handled by the authentication service, so Margo never
+          stores them. Open the emailed link to choose a new password — you can
+          keep using this session until then.
+        </p>
+      </SettingsCard>
 
       {/* Danger zone */}
       <section className="rounded-xl border border-red-200 bg-white shadow-soft">

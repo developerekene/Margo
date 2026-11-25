@@ -101,8 +101,23 @@ type SidebarProps = {
   adminName: string;
   email: string;
   initials: string;
+  /** `company_owner`, `company_admin`, `company_member` or `platform_admin`. */
+  role: string | null;
   onSignOut: () => void;
 };
+
+const ROLE_LABELS: Record<string, string> = {
+  company_owner: "Owner",
+  company_admin: "Admin",
+  company_member: "Member",
+  platform_admin: "Platform admin",
+};
+
+function roleLabel(role: string | null) {
+  if (!role) return "Member";
+
+  return ROLE_LABELS[role] ?? role.replace(/_/g, " ");
+}
 
 /**
  * Dashboard navigation. Sticky column on desktop, slide-out drawer on mobile.
@@ -115,6 +130,7 @@ export function Sidebar({
   adminName,
   email,
   initials,
+  role,
   onSignOut,
 }: SidebarProps) {
   // Escape closes the mobile drawer.
@@ -148,24 +164,26 @@ export function Sidebar({
         }`}
       >
         {/* Brand */}
-        <div className="flex items-center justify-between gap-2 px-4 pt-4">
-          <NavLink
-            to="/dashboard"
-            onClick={onClose}
-            aria-label="Margo dashboard"
-            className="rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-          >
-            <MargoLogo size="sm" />
-          </NavLink>
+        <div className="px-4 pt-4">
+          <div className="flex items-center justify-between gap-2">
+            <NavLink
+              to="/dashboard"
+              onClick={onClose}
+              aria-label="Margo dashboard"
+              className="rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            >
+              <MargoLogo size="sm" />
+            </NavLink>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close navigation"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-slate-100 hover:text-ink-900 lg:hidden"
-          >
-            <LuX className="h-4 w-4" aria-hidden="true" />
-          </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close navigation"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 transition-colors hover:bg-slate-100 hover:text-ink-900 lg:hidden"
+            >
+              <LuX className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         {/* Navigation */}
@@ -233,8 +251,16 @@ export function Sidebar({
           </div>
 
           <div className="mt-1.5 flex items-center justify-between gap-2">
-            <span className="rounded-full bg-[#ffeacf] px-2 py-0.5 text-[11px] font-medium text-brand-800">
-              Owner
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                role === "company_owner"
+                  ? "bg-[#ffeacf] text-brand-800"
+                  : role === "company_admin"
+                    ? "bg-brand-50 text-brand-700"
+                    : "bg-slate-100 text-ink-500"
+              }`}
+            >
+              {roleLabel(role)}
             </span>
 
             <div className="flex items-center gap-0.5">

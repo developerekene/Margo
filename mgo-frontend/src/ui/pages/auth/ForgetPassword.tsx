@@ -5,21 +5,33 @@ import { LuArrowLeft, LuCircleCheck } from "react-icons/lu";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
+import {
+  getApiErrorMessage,
+  useForgotPasswordMutation,
+} from "../../../api/endpoints";
 import { AuthLayout } from "../../Components/AuthLayout";
+import { FormAlert } from "../../Components/FormAlert";
 import { LockIcon, Spinner } from "../../Components/Icons";
 import { TextField } from "../../Components/TextField";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
 
 /**
- * Forgot-password screen — matches the signup/signin card. There is no reset
- * endpoint yet, so submitting simulates the request and confirms with a toast.
+ * Forgot-password screen — matches the signup/signin card. Submitting calls
+ * `POST /identity/forgot-password`, which always replies the same way so the
+ * form never reveals whether an address is registered.
  */
 export default function ForgetPassword() {
   const [email, setEmail] = useState("");
   const [touched, setTouched] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [sent, setSent] = useState<{ email: string; message: string } | null>(
+    null,
+  );
+
+  // RTK Query owns the request: `forgotPassword()` posts, `submitting` is in-flight.
+  const [forgotPassword, { isLoading: submitting }] =
+    useForgotPasswordMutation();
 
   const trimmed = email.trim();
   const error = !trimmed
@@ -31,23 +43,28 @@ export default function ForgetPassword() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setTouched(true);
+    setFormError(null);
 
     if (error || submitting) return;
 
-    setSubmitting(true);
-
     try {
-      // Placeholder for POST /identity/password-reset.
-      await new Promise((resolve) => setTimeout(resolve, 900));
+      const result = await forgotPassword({ email: trimmed }).unwrap();
 
-      setSentTo(trimmed);
+      setSent({
+        email: trimmed,
+        message:
+          result.message ||
+          `We emailed a password reset link to ${trimmed}.`,
+      });
       toast.success("Reset link sent", {
         id: "password-reset",
-        description: `We emailed a password reset link to ${trimmed}.`,
+        description:
+          result.message ||
+          `We emailed a password reset link to ${trimmed}.`,
         duration: 5000,
       });
-    } finally {
-      setSubmitting(false);
+    } catch (caught) {
+      setFormError(getApiErrorMessage(caught));
     }
   }
 
@@ -68,7 +85,7 @@ export default function ForgetPassword() {
         secure reset link.
       </p>
 
-      {sentTo ? (
+      {sent ? (
         <div
           role="status"
           className="mt-5 flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3.5 py-3 text-[12.5px] leading-relaxed text-brand-800"
@@ -78,16 +95,8 @@ export default function ForgetPassword() {
             aria-hidden="true"
           />
           <span>
-            <span className="font-semibold">Check your inbox.</span> We sent a
-            reset link to {sentTo}. It expires in 30 minutes.
-            <Link
-              to={`/reset-password?token=demo&email=${encodeURIComponent(
-                sentTo ?? "",
-              )}`}
-              className="mt-1.5 block font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-800"
-            >
-              Open the reset link (demo)
-            </Link>
+            <span className="font-semibold">Check your inbox.</span>{" "}
+            {sent.message}
           </span>
         </div>
       ) : null}
@@ -105,10 +114,13 @@ export default function ForgetPassword() {
           loading={submitting}
           onChange={(event) => {
             setEmail(event.target.value);
-            setSentTo(null);
+            setSent(null);
+            setFormError(null);
           }}
           onBlur={() => setTouched(true)}
         />
+
+        {formError ? <FormAlert message={formError} /> : null}
 
         <button
           type="submit"
@@ -120,7 +132,7 @@ export default function ForgetPassword() {
               <Spinner className="h-4 w-4" />
               Sending…
             </>
-          ) : sentTo ? (
+          ) : sent ? (
             "Resend reset link"
           ) : (
             "Send reset link"
