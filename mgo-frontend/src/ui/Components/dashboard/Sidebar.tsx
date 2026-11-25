@@ -101,8 +101,23 @@ type SidebarProps = {
   adminName: string;
   email: string;
   initials: string;
+  /** `company_owner`, `company_admin`, `company_member` or `platform_admin`. */
+  role: string | null;
   onSignOut: () => void;
 };
+
+const ROLE_LABELS: Record<string, string> = {
+  company_owner: "Owner",
+  company_admin: "Admin",
+  company_member: "Member",
+  platform_admin: "Platform admin",
+};
+
+function roleLabel(role: string | null) {
+  if (!role) return "Member";
+
+  return ROLE_LABELS[role] ?? role.replace(/_/g, " ");
+}
 
 /**
  * Dashboard navigation. Sticky column on desktop, slide-out drawer on mobile.
@@ -111,10 +126,11 @@ type SidebarProps = {
 export function Sidebar({
   open,
   onClose,
-  companyName,
+
   adminName,
   email,
   initials,
+  role,
   onSignOut,
 }: SidebarProps) {
   // Escape closes the mobile drawer.
@@ -168,12 +184,6 @@ export function Sidebar({
               <LuX className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
-
-          {companyName ? (
-            <p className="mt-2 truncate text-[12px] font-medium text-ink-500">
-              {companyName}
-            </p>
-          ) : null}
         </div>
 
         {/* Navigation */}
@@ -241,8 +251,16 @@ export function Sidebar({
           </div>
 
           <div className="mt-1.5 flex items-center justify-between gap-2">
-            <span className="rounded-full bg-[#ffeacf] px-2 py-0.5 text-[11px] font-medium text-brand-800">
-              Owner
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                role === "company_owner"
+                  ? "bg-[#ffeacf] text-brand-800"
+                  : role === "company_admin"
+                    ? "bg-brand-50 text-brand-700"
+                    : "bg-slate-100 text-ink-500"
+              }`}
+            >
+              {roleLabel(role)}
             </span>
 
             <div className="flex items-center gap-0.5">

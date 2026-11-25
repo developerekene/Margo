@@ -1,10 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 
-import { LuPencil, LuPlus, LuTrash2, LuX } from "react-icons/lu";
+import { LuPlus, LuTrash2, LuX } from "react-icons/lu";
 import { useSelector } from "react-redux";
 import { toast } from "sonner";
 
+import {
+  getApiErrorMessage,
+  useInviteUserMutation,
+  useListTenantUsersQuery,
+  useRemoveUserMutation,
+} from "../../../api/endpoints";
+import type { InviteRequest, TenantUser } from "../../../api/endpoints";
 import type { RootState } from "../../../Redux/Store";
 import { TextField } from "../TextField";
 
@@ -12,88 +19,46 @@ import { TextField } from "../TextField";
 /* Types                                                                      */
 /* -------------------------------------------------------------------------- */
 
-type TeamRole = "admin" | "member";
-type TeamPermission = "edit" | "delete" | "create" | "customize";
-type TeamPermissions = Record<TeamPermission, boolean>;
+type InviteRole = InviteRequest["role"];
 
-type TeamMember = {
-  id: string;
+type FormValues = {
   name: string;
   email: string;
-  role: TeamRole;
-  permissions: TeamPermissions;
+  role: InviteRole;
 };
-
-type MemberForm = Omit<TeamMember, "id">;
 
 type FormErrors = {
   name?: string;
   email?: string;
 };
 
-const PERMISSIONS: {
-  key: TeamPermission;
-  label: string;
-  hint: string;
-}[] = [
-  { key: "edit", label: "Edit chatbot", hint: "Change settings and content" },
-  { key: "delete", label: "Delete", hint: "Remove agents and sources" },
-  { key: "create", label: "Create", hint: "Create new agents" },
-  {
-    key: "customize",
-    label: "Customize",
-    hint: "Change the widget appearance",
-  },
-];
+/** One page of the tenant member list. */
+const PAGE_SIZE = 20;
 
-const FULL_ACCESS: TeamPermissions = {
-  edit: true,
-  delete: true,
-  create: true,
-  customize: true,
-};
-
-const NO_ACCESS: TeamPermissions = {
-  edit: false,
-  delete: false,
-  create: false,
-  customize: false,
-};
-
-const EMPTY_FORM: MemberForm = {
+const EMPTY_FORM: FormValues = {
   name: "",
   email: "",
-  role: "member",
-  permissions: { ...NO_ACCESS },
+  role: "company_member",
 };
 
-/** Keep the owner row in sync with the signed-in account. */
-function withOwnerIdentity(
-  members: TeamMember[],
-  user: RootState["auth"]["user"],
-): TeamMember[] {
-  if (!user) return members;
-
-  return members.map((member) =>
-    member.id === "owner"
-      ? {
-          ...member,
-          name: user.admin_name || member.name,
-          email: user.company_email || member.email,
-        }
-      : member,
-  );
-}
-
-const STORAGE_KEY = "margo:team";
+const ROLE_LABELS: Record<string, string> = {
+  company_owner: "Owner",
+  company_admin: "Admin",
+  company_member: "Member",
+  platform_admin: "Platform admin",
+};
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
 function initials(name: string) {
+  const trimmed = (name ?? "").trim();
+
+  if (!trimmed) return "?";
+
   return (
-    name
+    trimmed
       .split(" ")
       .filter(Boolean)
       .slice(0, 2)
@@ -102,153 +67,69 @@ function initials(name: string) {
   );
 }
 
-function seedMembers(user: RootState["auth"]["user"]): TeamMember[] {
-  return [
-    {
-      id: "owner",
-      name: user?.admin_name ?? "Workspace owner",
-      email: user?.company_email ?? "owner@example.com",
-      role: "admin",
-      permissions: { ...FULL_ACCESS },
-    },
-    {
-      id: "member-1",
-      name: "Lina Okafor",
-      email: "lina.okafor@example.com",
-      role: "member",
-      permissions: {
-        edit: true,
-        delete: false,
-        create: false,
-        customize: true,
-      },
-    },
-    {
-      id: "member-2",
-      name: "Tunde Bello",
-      email: "tunde.bello@example.com",
-      role: "member",
-      permissions: {
-        edit: false,
-        delete: false,
-        create: true,
-        customize: false,
-      },
-    },
-  ];
+function roleLabel(role: string) {
+  return ROLE_LABELS[role] ?? role.replace(/_/g, " ");
 }
 
-function loadMembers(fallback: TeamMember[]): TeamMember[] {
-  if (typeof window === "undefined") return fallback;
+/** `created_at` arrives as an ISO string; fall back to the raw value. */
+function formatDate(value: string) {
+  const date = new Date(value);
 
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return fallback;
+  if (Number.isNaN(date.getTime())) return value || "—";
 
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as TeamMember[]) : fallback;
-  } catch {
-    return fallback;
-  }
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 /* -------------------------------------------------------------------------- */
 /* Small pieces                                                               */
 /* -------------------------------------------------------------------------- */
 
-function RoleBadge({ role }: { role: TeamRole }) {
-  const admin = role === "admin";
+function RoleBadge({ role }: { role: string }) {
+  const owner = role === "company_owner";
+  const admin = role === "company_admin";
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11.5px] font-medium capitalize ${
-        admin
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11.5px] font-medium ${
+        owner
           ? "border-brand-200 bg-brand-50 text-brand-700"
-          : "border-line bg-slate-50 text-ink-500"
+          : admin
+            ? "border-line bg-white text-ink-700"
+            : "border-line bg-slate-50 text-ink-500"
       }`}
     >
-      {role}
+      {roleLabel(role)}
     </span>
   );
 }
 
-function AccessList({ member }: { member: TeamMember }) {
-  if (member.role === "admin") {
-    return (
-      <span className="text-[12px] font-medium text-brand-700">
-        Full access
-      </span>
-    );
-  }
-
-  const enabled = PERMISSIONS.filter(
-    (permission) => member.permissions[permission.key],
-  );
-
-  if (!enabled.length) {
-    return <span className="text-[12px] text-ink-400">View only</span>;
-  }
+/** `active` = accepted, `invited` = invitation still pending. */
+function StatusBadge({ status }: { status: string }) {
+  const active = status === "active";
+  const pending = status === "invited";
 
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {enabled.map((permission) => (
-        <span
-          key={permission.key}
-          className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] text-ink-500"
-        >
-          {permission.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function PermissionToggle({
-  label,
-  hint,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={onChange}
-      className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        checked
-          ? "border-brand-500 bg-brand-500/10"
-          : "border-line hover:border-line-strong"
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11.5px] font-medium ${
+        active
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : pending
+            ? "border-amber-200 bg-amber-50 text-amber-700"
+            : "border-line bg-slate-50 text-ink-500"
       }`}
     >
-      <span>
-        <span className="block text-[13px] font-medium text-ink-900">
-          {label}
-        </span>
-        <span className="mt-0.5 block text-[11.5px] text-ink-400">{hint}</span>
-      </span>
-
       <span
         aria-hidden="true"
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-          checked ? "bg-brand-500" : "bg-line-strong"
+        className={`h-1.5 w-1.5 rounded-full ${
+          active ? "bg-emerald-500" : pending ? "bg-amber-500" : "bg-ink-400"
         }`}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-            checked ? "translate-x-4" : ""
-          }`}
-        />
-      </span>
-    </button>
+      />
+      {active ? "Active" : pending ? "Pending" : status || "—"}
+    </span>
   );
 }
 
@@ -256,26 +137,48 @@ function PermissionToggle({
 /* Page                                                                       */
 /* -------------------------------------------------------------------------- */
 
-/** Team — the member list plus a create/edit dialog for roles and access. */
+/**
+ * Team — members of the signed-in tenant, served by
+ * `GET /identity/{tenant_id}/users` in pages of 20.
+ */
 export function Team() {
-  const user = useSelector((state: RootState) => state.auth.user);
+  const tenantId = useSelector((state: RootState) => state.auth.tenant_id);
+  const viewerRole = useSelector((state: RootState) => state.auth.role);
+  const canManage =
+    viewerRole === "company_owner" || viewerRole === "company_admin";
 
-  const [members, setMembers] = useState<TeamMember[]>(() =>
-    withOwnerIdentity(loadMembers(seedMembers(user)), user),
-  );
+  // Cursor stack, so "Previous" can walk back through the pages.
+  const [cursors, setCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
+  const [pageIndex, setPageIndex] = useState(0);
+
+  const { data, isLoading, isFetching, error, refetch } =
+    useListTenantUsersQuery(
+      {
+        tenant_id: tenantId ?? "",
+        limit: PAGE_SIZE,
+        cursor: cursors[pageIndex],
+      },
+      { skip: !tenantId },
+    );
+
+  const [inviteUser, { isLoading: inviting }] = useInviteUserMutation();
+  const [removeUser, { isLoading: removing }] = useRemoveUserMutation();
+
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<MemberForm>(EMPTY_FORM);
+  const [form, setForm] = useState<FormValues>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
 
-  // Keep the team list between visits.
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
-    } catch {
-      // Storage unavailable — keep working in memory.
-    }
-  }, [members]);
+  // Owner first, everything else in the order the backend returned.
+  const members = useMemo(() => {
+    const list = data?.users ?? [];
+    const rank = (role: string) => (role === "company_owner" ? 0 : 1);
+
+    return [...list].sort((a, b) => rank(a.role) - rank(b.role));
+  }, [data]);
+  const nextCursor = data?.next_cursor ?? null;
+  const firstLoad = isLoading && !data;
 
   // Escape closes the dialog and the page behind it stops scrolling.
   useEffect(() => {
@@ -296,21 +199,8 @@ export function Team() {
     };
   }, [dialogOpen]);
 
-  function openCreate() {
-    setEditingId(null);
-    setForm({ ...EMPTY_FORM, permissions: { ...NO_ACCESS } });
-    setErrors({});
-    setDialogOpen(true);
-  }
-
-  function openEdit(member: TeamMember) {
-    setEditingId(member.id);
-    setForm({
-      name: member.name,
-      email: member.email,
-      role: member.role,
-      permissions: { ...member.permissions },
-    });
+  function openDialog() {
+    setForm(EMPTY_FORM);
     setErrors({});
     setDialogOpen(true);
   }
@@ -319,25 +209,26 @@ export function Team() {
     setDialogOpen(false);
   }
 
-  function changeRole(role: TeamRole) {
-    setForm((current) => ({
-      ...current,
-      role,
-      permissions: role === "admin" ? { ...FULL_ACCESS } : { ...NO_ACCESS },
-    }));
+  function goNext() {
+    if (!nextCursor) return;
+
+    setCursors((current) => {
+      const next = [...current];
+      next[pageIndex + 1] = nextCursor;
+      return next;
+    });
+    setPageIndex((index) => index + 1);
   }
 
-  function togglePermission(key: TeamPermission) {
-    setForm((current) => ({
-      ...current,
-      permissions: {
-        ...current.permissions,
-        [key]: !current.permissions[key],
-      },
-    }));
+  function goPrevious() {
+    setPageIndex((index) => Math.max(0, index - 1));
   }
 
-  function saveMember() {
+  async function handleInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!tenantId || inviting) return;
+
     const name = form.name.trim();
     const email = form.email.trim().toLowerCase();
     const nextErrors: FormErrors = {};
@@ -346,58 +237,46 @@ export function Team() {
     if (!email) nextErrors.email = "Enter an email address.";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
       nextErrors.email = "Enter a valid email address.";
-    else if (
-      members.some(
-        (member) =>
-          member.id !== editingId && member.email.toLowerCase() === email,
-      )
-    )
-      nextErrors.email = "That email is already on the team.";
 
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    if (editingId) {
-      setMembers((current) =>
-        current.map((member) =>
-          member.id === editingId
-            ? { ...member, ...form, name, email }
-            : member,
-        ),
-      );
+    try {
+      await inviteUser({
+        tenant_id: tenantId,
+        name,
+        email,
+        role: form.role,
+      }).unwrap();
+
       setDialogOpen(false);
-
-      toast.success("Member updated", {
-        description: `${name}'s role and access were saved.`,
+      setForm(EMPTY_FORM);
+      toast.success("Invitation sent", {
+        description: `${name} will receive an email at ${email} with a link to create their password.`,
+        duration: 6000,
       });
-      return;
+    } catch (caught) {
+      toast.error("Couldn't send the invitation", {
+        description: getApiErrorMessage(caught),
+      });
     }
-
-    setMembers((current) => [
-      ...current,
-      { id: crypto.randomUUID(), ...form, name, email },
-    ]);
-    setDialogOpen(false);
-
-    // No invite backend yet — the email with the password-creation link is
-    // treated as sent here, and the toast confirms it to the admin.
-    toast.success("Invitation sent", {
-      description: `We sent ${name} a link at ${email} to create their password.`,
-      duration: 6000,
-    });
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    saveMember();
-  }
-
-  function deleteMember(member: TeamMember) {
+  async function removeMember(member: TenantUser) {
+    if (!tenantId || removing) return;
     if (!window.confirm(`Remove ${member.name} from the team?`)) return;
-    setMembers((current) => current.filter((item) => item.id !== member.id));
-  }
 
-  const isAdmin = form.role === "admin";
+    try {
+      await removeUser({ tenant_id: tenantId, userId: member.uid }).unwrap();
+      toast.success("Member removed", {
+        description: `${member.name} no longer has access to this workspace.`,
+      });
+    } catch (caught) {
+      toast.error("Couldn't remove the member", {
+        description: getApiErrorMessage(caught),
+      });
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -408,15 +287,16 @@ export function Team() {
               Team members
             </h2>
             <p className="mt-1 text-[12.5px] text-ink-500">
-              {members.length} {members.length === 1 ? "member" : "members"} in
-              this workspace.
+              People with access to this workspace. Invitations are emailed and
+              the recipient sets their own password.
             </p>
           </div>
 
           <button
             type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            onClick={openDialog}
+            disabled={!tenantId || !canManage}
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <LuPlus className="h-4 w-4" aria-hidden="true" />
             Create member
@@ -424,12 +304,41 @@ export function Team() {
         </div>
 
         <div className="border-t border-line">
-          {members.length ? (
+          {!tenantId ? (
+            <p className="px-5 py-10 text-center text-[13px] text-ink-400">
+              Sign in with a workspace account to manage the team.
+            </p>
+          ) : error ? (
+            <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
+              <p className="text-[13px] text-ink-500">
+                {getApiErrorMessage(error)}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => void refetch()}
+                className="rounded-lg border border-line bg-white px-3.5 py-2 text-[12.5px] font-semibold text-ink-700 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+              >
+                Try again
+              </button>
+            </div>
+          ) : firstLoad ? (
+            <p className="px-5 py-10 text-center text-[13px] text-ink-400">
+              Loading team members…
+            </p>
+          ) : members.length ? (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-left">
+              <table className="w-full min-w-200 border-collapse text-left">
                 <thead>
                   <tr className="border-b border-line">
-                    {["Member", "Role", "Access", "Action"].map((column) => (
+                    {[
+                      "Member",
+                      "Role",
+                      "Status",
+                      "Invited by",
+                      "Joined",
+                      "Action",
+                    ].map((column) => (
                       <th
                         key={column}
                         scope="col"
@@ -444,7 +353,7 @@ export function Team() {
                 <tbody>
                   {members.map((member) => (
                     <tr
-                      key={member.id}
+                      key={member.uid}
                       className="border-b border-line transition-colors last:border-0 hover:bg-slate-50/70"
                     >
                       <th scope="row" className="px-4 py-3 text-left">
@@ -454,7 +363,7 @@ export function Team() {
                           </span>
                           <span className="min-w-0">
                             <span className="block truncate text-[13.5px] font-medium text-ink-900">
-                              {member.name}
+                              {member.name || "—"}
                             </span>
                             <span className="block truncate text-[12px] text-ink-400">
                               {member.email}
@@ -468,31 +377,34 @@ export function Team() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <AccessList member={member} />
+                        <StatusBadge status={member.status} />
+                      </td>
+
+                      <td className="px-4 py-3 text-[12.5px] text-ink-500">
+                        <span className="block max-w-45 truncate">
+                          {member.invited_by ?? "—"}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 text-[12.5px] text-ink-500">
+                        {formatDate(member.created_at)}
                       </td>
 
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
+                        {canManage && member.role !== "company_owner" ? (
                           <button
                             type="button"
-                            onClick={() => openEdit(member)}
-                            aria-label={`Edit ${member.name}`}
-                            title="Edit"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-ink-500 transition-colors hover:border-brand-500 hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-                          >
-                            <LuPencil className="h-4 w-4" aria-hidden="true" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => deleteMember(member)}
-                            aria-label={`Delete ${member.name}`}
-                            title="Delete"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-ink-500 transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500"
+                            onClick={() => void removeMember(member)}
+                            disabled={removing}
+                            aria-label={`Remove ${member.name}`}
+                            title="Remove access"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-ink-500 transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <LuTrash2 className="h-4 w-4" aria-hidden="true" />
                           </button>
-                        </div>
+                        ) : (
+                          <span className="text-[12px] text-ink-400">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -501,13 +413,41 @@ export function Team() {
             </div>
           ) : (
             <p className="px-5 py-10 text-center text-[13px] text-ink-400">
-              No team members yet. Create your first teammate.
+              No team members yet. Invite your first teammate.
             </p>
           )}
         </div>
+
+        {tenantId && !error ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
+            <span className="text-[12px] text-ink-400">
+              Page {pageIndex + 1} · {PAGE_SIZE} per page
+            </span>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={goPrevious}
+                disabled={pageIndex === 0 || isFetching}
+                className="rounded-lg border border-line bg-white px-3 py-1.5 text-[12.5px] font-semibold text-ink-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+
+              <button
+                type="button"
+                onClick={goNext}
+                disabled={!nextCursor || isFetching}
+                className="rounded-lg border border-line bg-white px-3 py-1.5 text-[12.5px] font-semibold text-ink-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
 
-      {/* Create / edit dialog */}
+      {/* Invite dialog */}
       {dialogOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
           <div
@@ -522,19 +462,18 @@ export function Team() {
             aria-labelledby="member-dialog-title"
             className="relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-white shadow-card"
           >
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleInvite}>
               <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
                 <div className="min-w-0">
                   <h2
                     id="member-dialog-title"
                     className="text-[15px] font-semibold text-ink-900"
                   >
-                    {editingId ? "Edit team member" : "Create team member"}
+                    Create team member
                   </h2>
                   <p className="mt-1 text-[12.5px] leading-relaxed text-ink-500">
-                    {editingId
-                      ? "Update this teammate's role and access."
-                      : "Add a teammate and choose what they can do."}
+                    We email an invitation with a secure link so they can create
+                    their own password.
                   </p>
                 </div>
 
@@ -588,53 +527,45 @@ export function Team() {
                     id="member-role"
                     value={form.role}
                     onChange={(event) =>
-                      changeRole(event.target.value as TeamRole)
+                      setForm((current) => ({
+                        ...current,
+                        role: event.target.value as InviteRole,
+                      }))
                     }
                     className="h-11 w-full rounded-lg border border-line bg-white px-3.5 text-[14px] text-ink-900 outline-none transition-colors hover:border-line-strong focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10"
                   >
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
+                    <option value="company_member">Member</option>
+                    <option value="company_admin">Admin</option>
                   </select>
                   <p className="mt-1.5 text-[12.5px] text-ink-400">
-                    Admins always have full access.
+                    Admins can manage the team, agents and billing. Members can
+                    use the workspace.
                   </p>
                 </div>
-
-                <fieldset>
-                  <legend className="mb-2 text-[13px] font-medium text-ink-700">
-                    Access
-                  </legend>
-
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {PERMISSIONS.map((permission) => (
-                      <PermissionToggle
-                        key={permission.key}
-                        label={permission.label}
-                        hint={permission.hint}
-                        checked={form.permissions[permission.key]}
-                        disabled={isAdmin}
-                        onChange={() => togglePermission(permission.key)}
-                      />
-                    ))}
-                  </div>
-                </fieldset>
               </div>
 
-              <div className="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-4">
-                <button
-                  type="button"
-                  onClick={closeDialog}
-                  className="rounded-lg border border-line bg-white px-4 py-2.5 text-[13px] font-semibold text-ink-700 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-                >
-                  Cancel
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-4">
+                <span className="text-[12px] text-ink-400">
+                  They&rsquo;ll get a link to create their password.
+                </span>
 
-                <button
-                  type="submit"
-                  className="rounded-lg bg-brand-500 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-                >
-                  {editingId ? "Save changes" : "Create member"}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={closeDialog}
+                    className="rounded-lg border border-line bg-white px-4 py-2.5 text-[13px] font-semibold text-ink-700 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={inviting}
+                    className="rounded-lg bg-brand-500 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {inviting ? "Sending invite…" : "Send invite"}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

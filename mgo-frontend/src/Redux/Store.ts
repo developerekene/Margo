@@ -1,7 +1,7 @@
 import { configureStore } from "@reduxjs/toolkit";
 import agentReducer, { agentsReducer, persistAgents } from "./Slices/agentslic";
 import { api } from "../api/endpoints";
-import authReducer from "./Slices/authslic";
+import authReducer, { persistAuthState } from "./Slices/authslic";
 import billingReducer, { persistBillingSettings } from "./Slices/billingslic";
 import chatReducer from "./Slices/chatslic";
 import notificationsReducer from "./Slices/notificationslic";
@@ -19,6 +19,17 @@ export const store = configureStore({
 
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(api.middleware),
+});
+
+// Persist the signed-in session so a refresh keeps you on the dashboard.
+let lastAuth = store.getState().auth;
+
+store.subscribe(() => {
+  const auth = store.getState().auth;
+  if (auth === lastAuth) return;
+
+  lastAuth = auth;
+  persistAuthState(auth);
 });
 
 // Persist the agent list whenever it changes, so saved agents survive a reload.

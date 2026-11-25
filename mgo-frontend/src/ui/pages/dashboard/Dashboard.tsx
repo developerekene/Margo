@@ -125,6 +125,7 @@ export default function Dashboard() {
   const [navOpen, setNavOpen] = useState(false);
 
   const user = useSelector((state: RootState) => state.auth.user);
+  const role = useSelector((state: RootState) => state.auth.role);
   const isAuthenticated = useSelector(
     (state: RootState) => state.auth.isAuthenticated,
   );
@@ -177,6 +178,7 @@ export default function Dashboard() {
         adminName={user.admin_name}
         email={user.company_email}
         initials={initials}
+        role={role}
         onSignOut={signOut}
       />
 
