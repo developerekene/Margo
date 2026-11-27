@@ -14,6 +14,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, UploadFile
 from fastapi.responses import JSONResponse
 
+from app.core.config import settings
 from app.core.responses import AppError, envelope
 from app.modules.knowledge import service
 from app.modules.knowledge.permissions import require_cloud_tasks_token
@@ -32,8 +33,8 @@ router = APIRouter()
 # Roles permitted to manage knowledge resources.
 _KNOWLEDGE_ROLES = ["company_owner", "company_admin"]
 
-# Max upload size in bytes (enforced before reading file contents).
-_MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB default; config overrides possible
+# Upload size limit is read from settings inside the endpoint so tests can
+# override it via monkeypatching without module-reload gymnastics.
 
 # ---------------------------------------------------------------------------
 # IMPORTANT: internal routes declared FIRST
@@ -137,12 +138,13 @@ def upload_document(
             400,
         )
 
-    # Read and validate size.
-    file_bytes = file.file.read(_MAX_UPLOAD_BYTES + 1)
-    if len(file_bytes) > _MAX_UPLOAD_BYTES:
+    # Read and validate size — limit is config-driven, not hardcoded.
+    max_bytes = settings.KNOWLEDGE_MAX_UPLOAD_MB * 1024 * 1024
+    file_bytes = file.file.read(max_bytes + 1)
+    if len(file_bytes) > max_bytes:
         raise AppError(
             "file_too_large",
-            f"Maximum upload size is {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+            f"Maximum upload size is {settings.KNOWLEDGE_MAX_UPLOAD_MB} MB.",
             413,
         )
     if len(file_bytes) == 0:

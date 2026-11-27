@@ -483,19 +483,19 @@ class TestDeleteDocument:
         )
 
     def test_continues_when_gcs_delete_fails(self, db):
-        """GCS delete failure should not prevent Firestore record deletion."""
+        """GCS delete failure now surfaces a 503 — the Firestore record is preserved
+        so the client can retry and GCS deletion will be attempted again."""
         self._seed_doc(db)
-        with (
-            patch(
-                "app.modules.knowledge.service.gcs.delete_file",
-                side_effect=AppError("storage_delete_failed", "oops", 503),
-            ),
-            patch("app.modules.knowledge.service.publish"),
+        with patch(
+            "app.modules.knowledge.service.gcs.delete_file",
+            side_effect=AppError("storage_delete_failed", "oops", 503),
         ):
-            # Should not raise
-            service.delete_document("t-1", "doc-1")
+            with pytest.raises(AppError) as exc_info:
+                service.delete_document("t-1", "doc-1")
 
-        assert db.doc("tenants/t-1/documents/doc-1") is None
+        # Firestore record must still exist — the deletion was aborted.
+        assert db.doc("tenants/t-1/documents/doc-1") is not None
+        assert exc_info.value.status_code == 503
 
 
 # ---------------------------------------------------------------------------
@@ -567,6 +567,8 @@ class TestProcessPage:
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.content = b"<html><head><script>var x=1</script></head><body>  </body></html>"
+        mock_response.headers = {"content-type": "text/html; charset=utf-8"}
+        mock_response.url = "https://example.com"
 
         with (
             patch("httpx.get", return_value=mock_response),
@@ -587,6 +589,8 @@ class TestProcessPage:
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.content = b"<html><head><title>Test</title></head><body><p>Content</p></body></html>"
+        mock_response.headers = {"content-type": "text/html; charset=utf-8"}
+        mock_response.url = "https://example.com"
 
         with (
             patch("httpx.get", return_value=mock_response),

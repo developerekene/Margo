@@ -196,12 +196,28 @@ def create_crawl_job(tenant_id: str, url: str) -> CrawlJobResponse:
                 "updated_at": _now(),
             })
 
-    # Update the job if some enqueues failed.
+    # Record enqueue failures on the job.
+    #
+    # Increment (not overwrite): workers for pages that were already queued may
+    # have finished and incremented the counters while this loop was running.
+    job_status = CrawlJobStatus.PROCESSING
+    job_error: str | None = None
     if pages_failed > 0:
-        _crawl_jobs_ref(db, tenant_id).document(job_id).update({
-            "pages_failed": pages_failed,
+        job_update = {
+            "pages_failed": Increment(pages_failed),
             "updated_at": _now(),
-        })
+        }
+        if pages_failed == page_count:
+            # No task was queued, so no worker will ever finish this job.
+            job_status = CrawlJobStatus.FAILED
+            job_error = "None of the discovered pages could be queued."
+            job_update["status"] = job_status.value
+            job_update["error_message"] = job_error
+        _crawl_jobs_ref(db, tenant_id).document(job_id).update(job_update)
+
+        if job_status == CrawlJobStatus.PROCESSING:
+            # Workers may already have finished every queued page.
+            _finalize_job_if_done(db, tenant_id, job_id)
 
     logger.info(
         "Crawl job created: tenant=%s job=%s pages=%d failed_enqueue=%d",
@@ -212,12 +228,13 @@ def create_crawl_job(tenant_id: str, url: str) -> CrawlJobResponse:
         job_id=job_id,
         tenant_id=tenant_id,
         start_url=clean_url,
-        status=CrawlJobStatus.PROCESSING,
+        status=job_status,
         pages_discovered=page_count,
         pages_completed=0,
         pages_failed=pages_failed,
         created_at=now,
         updated_at=now,
+        error_message=job_error,
     )
 
 
@@ -382,9 +399,20 @@ def list_documents(
     )
     if cursor:
         # cursor is the document_id of the last item on the previous page.
+        # The lookup is scoped to this tenant's collection, so a cursor from
+        # another tenant will simply not exist here — cross-tenant contamination
+        # is structurally impossible.
         last_doc = _documents_ref(db, tenant_id).document(cursor).get()
-        if last_doc.exists:
-            query = query.start_after(last_doc)
+        if not last_doc.exists:
+            # Cursor document was deleted or is invalid; fail explicitly so the
+            # client knows to restart pagination from page one.
+            raise AppError(
+                "invalid_cursor",
+                "The pagination cursor is no longer valid. "
+                "Please restart from the first page.",
+                400,
+            )
+        query = query.start_after(last_doc)
 
     docs = query.get()
     has_more = len(docs) > page_limit
@@ -434,17 +462,23 @@ def delete_document(tenant_id: str, document_id: str) -> None:
 
     object_path = data.get("storage_object")
 
-    # Delete from GCS (best-effort — idempotent).
+    # GCS delete must succeed before we touch Firestore.  If it fails we
+    # surface a 503 so the client can retry; the Firestore record stays
+    # intact meaning the retry will find the document and attempt GCS
+    # deletion again (delete_file is idempotent — NotFound is not an error).
     if object_path:
         try:
             gcs.delete_file(object_path)
-        except AppError as exc:
+        except AppError:
             logger.error(
-                "GCS delete failed during document deletion: doc=%s object=%s",
+                "GCS delete failed during document deletion: doc=%s object=%s — aborting to preserve Firestore record",
                 document_id, object_path,
             )
-            # We continue and delete the Firestore record regardless,
-            # since the GCS delete is idempotent and can be retried.
+            raise AppError(
+                "storage_delete_failed",
+                "Failed to delete the stored file. Please try again.",
+                503,
+            )
 
     # Delete the Firestore record.
     doc_ref.delete()
@@ -495,16 +529,72 @@ def process_page(tenant_id: str, job_id: str, page_id: str, url: str) -> None:
     page_ref.update({"status": PageStatus.EXTRACTING.value, "updated_at": _now()})
 
     # Fetch the page.
+    # SSRF hardening: redirect count is capped; the final resolved URL is
+    # re-checked against private IP ranges so a redirect to 169.254.x.x cannot
+    # bypass the initial URL validation.
     try:
         import httpx as _httpx
+        from app.modules.knowledge.url_validation import is_private_ip as _is_private_ip
+        from urllib.parse import urlparse as _urlparse
+
         response = _httpx.get(
             url,
             timeout=settings.KNOWLEDGE_CRAWL_TIMEOUT_SECONDS,
             follow_redirects=True,
+            max_redirects=5,
             headers={"User-Agent": "MargoBot/1.0 (+https://margo.ai/bot)"},
         )
         response.raise_for_status()
+
+        # Re-check the final URL after redirects.
+        final_host = _urlparse(str(response.url)).hostname or ""
+        if _is_private_ip(final_host):
+            _fail_page(page_ref, "fetch", "Redirect to private/internal address blocked.")
+            _increment_job_failed(db, tenant_id, job_id)
+            return
+
+        # Reject non-HTML responses (content-type check is case-insensitive).
+        content_type = response.headers.get("content-type", "")
+        if "text/" not in content_type.lower():
+            _fail_page(page_ref, "fetch", f"Unexpected content-type: {content_type!r}")
+            _increment_job_failed(db, tenant_id, job_id)
+            return
+
+        # Guard against oversized responses to avoid excessive memory use.
+        _max_bytes = settings.KNOWLEDGE_MAX_CONTENT_CHARS * 4  # generous UTF-8 overhead
+        if len(response.content) > _max_bytes:
+            _fail_page(page_ref, "fetch", "Response body exceeds size limit.")
+            _increment_job_failed(db, tenant_id, job_id)
+            return
+
+    except _httpx.TooManyRedirects as exc:
+        # Treat redirect loops as a permanent failure for this URL.
+        _fail_page(page_ref, "fetch", f"Too many redirects: {exc}")
+        _increment_job_failed(db, tenant_id, job_id)
+        return
+    except (_httpx.TimeoutException, _httpx.ConnectError, _httpx.RemoteProtocolError) as exc:
+        # Transient network/infra errors — raise AppError 503 so Cloud Tasks
+        # delivers a 5xx response and retries the task automatically.
+        raise AppError(
+            "fetch_transient_error",
+            f"Transient fetch failure, will retry: {type(exc).__name__}",
+            503,
+        ) from exc
+    except _httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        if status >= 500:
+            # Remote server error — transient, let Cloud Tasks retry.
+            raise AppError(
+                "fetch_transient_error",
+                f"Remote server returned {status}, will retry.",
+                503,
+            ) from exc
+        # 4xx — permanent failure (bad URL, auth required, gone, etc.).
+        _fail_page(page_ref, "fetch", f"HTTP {status} from target page.")
+        _increment_job_failed(db, tenant_id, job_id)
+        return
     except Exception as exc:
+        # Unexpected errors are treated as permanent to avoid infinite retry storms.
         _fail_page(page_ref, "fetch", f"Page fetch failed: {exc}")
         _increment_job_failed(db, tenant_id, job_id)
         return
@@ -517,21 +607,31 @@ def process_page(tenant_id: str, job_id: str, page_id: str, url: str) -> None:
         _increment_job_failed(db, tenant_id, job_id)
         return
 
-    # Mark completed and publish event.
+    # Publish the event BEFORE marking the page as completed.
+    # If publish raises (subscriber failure), the page stays in EXTRACTING so
+    # Cloud Tasks can retry and re-deliver the event. Once publish succeeds,
+    # mark the page terminal and update the job counter.
+    try:
+        publish(
+            "PageExtracted",
+            tenant_id=tenant_id,
+            url=url,
+            title=title,
+            content=content,
+        )
+    except Exception as exc:
+        raise AppError(
+            "event_publish_error",
+            "Failed to publish PageExtracted event; will retry.",
+            503,
+        ) from exc
+
     page_ref.update({
         "status": PageStatus.COMPLETED.value,
         "title": title,
         "updated_at": _now(),
     })
     _increment_job_completed(db, tenant_id, job_id)
-
-    publish(
-        "PageExtracted",
-        tenant_id=tenant_id,
-        url=url,
-        title=title,
-        content=content,
-    )
     logger.info("Page extracted: tenant=%s job=%s page=%s", tenant_id, job_id, page_id)
 
 
@@ -544,6 +644,56 @@ def _fail_page(page_ref, stage: str, message: str) -> None:
     })
 
 
+def _finalize_job_if_done(db, tenant_id: str, job_id: str) -> None:
+    """Move a crawl job out of 'processing' once every page has finished.
+
+    A job is done when pages_completed + pages_failed >= pages_discovered.
+    It becomes 'completed' if at least one page succeeded (the per-page
+    failures stay visible in pages_failed), otherwise 'failed'.
+
+    Safe to call repeatedly and from concurrent workers: it re-reads the job
+    after the counters were incremented and only ever writes a terminal status
+    to a job that is still 'processing'. Never raises, so a bookkeeping problem
+    cannot make Cloud Tasks retry an already-extracted page.
+    """
+    try:
+        job_ref = _crawl_jobs_ref(db, tenant_id).document(job_id)
+        snapshot = job_ref.get()
+        if not snapshot.exists:
+            return
+
+        job = snapshot.to_dict()
+        discovered = job.get("pages_discovered") or 0
+        if discovered <= 0:
+            return
+        if job.get("status") != CrawlJobStatus.PROCESSING.value:
+            return
+
+        completed = job.get("pages_completed", 0)
+        failed = job.get("pages_failed", 0)
+        if completed + failed < discovered:
+            return
+
+        if completed > 0:
+            update = {
+                "status": CrawlJobStatus.COMPLETED.value,
+                "updated_at": _now(),
+            }
+        else:
+            update = {
+                "status": CrawlJobStatus.FAILED.value,
+                "error_message": "None of the pages could be processed.",
+                "updated_at": _now(),
+            }
+        job_ref.update(update)
+        logger.info(
+            "Crawl job finished: tenant=%s job=%s status=%s completed=%d failed=%d",
+            tenant_id, job_id, update["status"], completed, failed,
+        )
+    except Exception:
+        logger.exception("Failed to finalize crawl job: job=%s", job_id)
+
+
 def _increment_job_failed(db, tenant_id: str, job_id: str) -> None:
     try:
         _crawl_jobs_ref(db, tenant_id).document(job_id).update({
@@ -552,6 +702,8 @@ def _increment_job_failed(db, tenant_id: str, job_id: str) -> None:
         })
     except Exception:
         logger.exception("Failed to increment pages_failed: job=%s", job_id)
+        return
+    _finalize_job_if_done(db, tenant_id, job_id)
 
 
 def _increment_job_completed(db, tenant_id: str, job_id: str) -> None:
@@ -562,7 +714,8 @@ def _increment_job_completed(db, tenant_id: str, job_id: str) -> None:
         })
     except Exception:
         logger.exception("Failed to increment pages_completed: job=%s", job_id)
-
+        return
+    _finalize_job_if_done(db, tenant_id, job_id)
 
 # ---------------------------------------------------------------------------
 # Internal: process-document worker
@@ -599,6 +752,16 @@ def process_document(
         )
         return
 
+    # Verify the storage_object in the task payload matches the stored record.
+    # A spoofed or replayed task cannot redirect processing to a different
+    # object (e.g. one belonging to another tenant).
+    if data.get("storage_object") != storage_object:
+        logger.warning(
+            "process_document: storage_object mismatch payload=%r stored=%r doc=%s",
+            storage_object, data.get("storage_object"), document_id,
+        )
+        return
+
     # Idempotency: skip if already past extraction.
     if data["status"] not in (DocumentStatus.QUEUED.value, DocumentStatus.EXTRACTING.value):
         logger.info(
@@ -631,7 +794,26 @@ def process_document(
         _fail_document(doc_ref, "extraction", str(exc))
         return
 
-    # Transition to 'embedding' (Decision 1: completed = embedding done in future).
+    # Publish BEFORE the terminal status update for the same reason as
+    # process_page: if publish raises, the document stays in EXTRACTING so
+    # Cloud Tasks can retry and re-deliver DocumentExtracted.
+    try:
+        publish(
+            "DocumentExtracted",
+            tenant_id=tenant_id,
+            document_id=document_id,
+            source_type=source_type_str,
+            title=title or data.get("filename", ""),
+            content=content,
+        )
+    except Exception as exc:
+        raise AppError(
+            "event_publish_error",
+            "Failed to publish DocumentExtracted event; will retry.",
+            503,
+        ) from exc
+
+    # Transition to 'embedding' — only reached after successful publish.
     now = _now()
     doc_ref.update({
         "status": DocumentStatus.EMBEDDING.value,
@@ -641,15 +823,6 @@ def process_document(
         "error_message": None,
         "failure_stage": None,
     })
-
-    publish(
-        "DocumentExtracted",
-        tenant_id=tenant_id,
-        document_id=document_id,
-        source_type=source_type_str,
-        title=title or data.get("filename", ""),
-        content=content,
-    )
     logger.info("Document extracted: tenant=%s doc=%s", tenant_id, document_id)
 
 

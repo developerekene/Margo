@@ -112,6 +112,43 @@ def send_password_reset_email(email: str) -> None:
 
         raise ValueError(f"Firebase sendOobCode failed: {error_code}")
 
+def confirm_password_reset(oob_code: str, new_password: str) -> str:
+    """Complete a password reset with the code from the emailed Firebase link.
+
+    Calls the Identity Toolkit REST endpoint ``accounts:resetPassword``; the
+    Admin SDK has no equivalent. Firebase validates the action code, rejects
+    invalid / expired / already-used codes, sets the new password and consumes
+    the code, so the same link cannot be replayed.
+
+    Returns the email address the code belonged to (Firebase reports it).
+    Raises ValueError carrying only Firebase's error code on failure -- never
+    the code or the password -- so callers can map it to a controlled error.
+    """
+    url = (
+        "https://identitytoolkit.googleapis.com/v1/"
+        f"accounts:resetPassword?key={settings.FIREBASE_WEB_API_KEY}"
+    )
+
+    response = httpx.post(
+        url,
+        json={"oobCode": oob_code, "newPassword": new_password},
+        timeout=15.0,
+    )
+
+    if response.status_code != 200:
+        try:
+            error_code = (
+                response.json().get("error", {}).get("message", "UNKNOWN_ERROR")
+            )
+        except (ValueError, AttributeError):
+            error_code = "UNKNOWN_ERROR"
+
+        raise ValueError(f"Firebase resetPassword failed: {error_code}")
+
+    try:
+        return response.json().get("email", "") or ""
+    except (ValueError, AttributeError):
+        return ""
 
 def _send_oob_verify_email(id_token: str) -> None:
     """POST sendOobCode VERIFY_EMAIL using a caller-supplied ID token.

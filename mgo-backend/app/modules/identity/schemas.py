@@ -153,3 +153,20 @@ class ForgotPasswordRequest(BaseModel):
 
 class ForgotPasswordResponse(BaseModel):
     message: str
+
+
+
+class ResetPasswordRequest(BaseModel):
+    """Body for POST /identity/reset-password.
+
+    ``oob_code`` is the Firebase action code the frontend read from the
+    ``oobCode`` query parameter of the reset page URL. The 8-character minimum
+    matches registration; the 128 cap matches login.
+    """
+
+    oob_code: str = Field(min_length=1, max_length=2048)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ResetPasswordResponse(BaseModel):
+    message: str

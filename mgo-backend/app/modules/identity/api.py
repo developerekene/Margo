@@ -14,6 +14,7 @@ from app.modules.identity.schemas import (
     PlatformAdminRequest,
     RegisterRequest,
     ResendVerificationRequest,
+    ResetPasswordRequest,
     WidgetDomainRequest,
 )
 
@@ -60,6 +61,19 @@ def forgot_password(payload: ForgotPasswordRequest):
     result = service.request_password_reset(payload)
     return envelope(data=result.model_dump())
 
+
+
+
+@router.post("/reset-password", response_model=dict)
+def reset_password(payload: ResetPasswordRequest):
+    """Complete a password reset with the oobCode from the emailed link.
+
+    The code is validated and consumed by Firebase (invalid, expired and
+    already-used codes return 400 invalid_or_expired_code). On success the
+    user's existing sessions are revoked and they sign in with the new password.
+    """
+    result = service.reset_password(payload)
+    return envelope(data=result.model_dump())
 
 # ---------------------------------------------------------------------------
 # Authenticated — caller's own profile and session management

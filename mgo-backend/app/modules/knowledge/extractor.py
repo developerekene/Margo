@@ -182,10 +182,12 @@ def _strip_markdown(text: str) -> str:
     # Bold and italic.
     text = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", text)
     text = re.sub(r"_{1,3}(.+?)_{1,3}", r"\1", text)
+    # Images first: ![alt](url) -> alt.  Must come before the link rule
+    # because the link pattern \[...\]\(...\) also matches the [alt](url)
+    # part of an image literal, which would leave a stray "!" in the output.
+    text = re.sub(r"!\[([^\]]*)\]\([^\)]+\)", r"\1", text)
     # Links: [text](url) -> text.
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
-    # Images: ![alt](url) -> alt.
-    text = re.sub(r"!\[([^\]]*)\]\([^\)]+\)", r"\1", text)
     # Blockquotes.
     text = re.sub(r"^>\s?", "", text, flags=re.MULTILINE)
     # Horizontal rules.
