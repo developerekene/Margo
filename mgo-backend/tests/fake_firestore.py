@@ -66,6 +66,9 @@ class FakeDocRef:
             raise NotFound("no document to update")
         self._db.store[self.path] = _apply(self._db.store[self.path], data)
 
+    def delete(self):
+        self._db.store.pop(self.path, None)
+
 
 class FakeQuery:
     def __init__(self, collection, filters=(), order=None, after=None, limit=None):
@@ -107,6 +110,9 @@ class FakeQuery:
             field, direction = self._order
 
             def key(d):
+                # "__name__" is Firestore's document ID — not a data field.
+                if field == "__name__":
+                    return (d.id,)
                 return (d.to_dict()[field], d.id)  # document id breaks ties
 
             docs.sort(key=key, reverse=(direction == "DESCENDING"))
@@ -119,6 +125,9 @@ class FakeQuery:
         if self._limit is not None:
             docs = docs[: self._limit]
         return docs
+
+    # Firestore supports both .get() and .stream() for queries; treat as the same.
+    stream = get
 
 
 class FakeCollection(FakeQuery):

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from firebase_admin import auth
 
 from app.core.firebase import (
+    confirm_password_reset,
     get_firestore_client,
     init_firebase,
     send_email_verification,
@@ -32,6 +33,8 @@ from app.modules.identity.schemas import (
     RegistrationPendingResponse,
     ResendVerificationRequest,
     ResendVerificationResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
     TenantListResponse,
     TenantSummary,
     UserListResponse,
@@ -96,18 +99,34 @@ def _parse_cursor_limit(
     return limit, cursor_param
 
 
-def _user_doc_to_response(doc_data: dict) -> UserResponse:
-    """Convert a Firestore member document to a UserResponse schema."""
+def _user_doc_to_response(
+    doc_data: dict,
+    inviter_names: dict[str, str] | None = None,
+) -> UserResponse:
+    """Convert a Firestore member document to a UserResponse schema.
+
+    ``invited_by`` is resolved to the inviter's display name when
+    ``inviter_names`` is supplied.  Callers should batch-build this map
+    before iterating a page to avoid an N+1 lookup pattern.
+    """
     created_at = doc_data.get("created_at")
     if hasattr(created_at, "isoformat"):
         created_at = created_at.isoformat()
+
+    raw_uid = doc_data.get("invited_by")
+    if raw_uid and inviter_names:
+        # Return the display name, or None if the inviter is no longer a member.
+        invited_by_value: str | None = inviter_names.get(raw_uid) or None
+    else:
+        invited_by_value = None
+
     return UserResponse(
         uid=doc_data["uid"],
         email=doc_data["email"],
         name=doc_data.get("name", ""),
         role=doc_data["role"],
         status=doc_data["status"],
-        invited_by=doc_data.get("invited_by"),
+        invited_by=invited_by_value,
         created_at=created_at or "",
     )
 
@@ -397,7 +416,29 @@ def list_users(
     has_more = len(docs) > page_limit
     page_docs = docs[:page_limit]
 
-    users = [_user_doc_to_response(d.to_dict()) for d in page_docs]
+    # Batch-resolve invited_by UIDs to display names for the page.
+    # One Firestore read per unique inviter — not one per user.
+    inviter_uids = {
+        d.to_dict().get("invited_by")
+        for d in page_docs
+        if d.to_dict().get("invited_by")
+    }
+    inviter_names: dict[str, str] = {}
+    for uid in inviter_uids:
+        try:
+            inviter_doc = (
+                db.collection("tenants")
+                .document(tenant_id)
+                .collection("members")
+                .document(uid)
+                .get()
+            )
+            if inviter_doc.exists:
+                inviter_names[uid] = inviter_doc.to_dict().get("name") or ""
+        except Exception:
+            pass  # Missing or unreadable inviter — treated as unknown.
+
+    users = [_user_doc_to_response(d.to_dict(), inviter_names) for d in page_docs]
     next_cursor = page_docs[-1].id if has_more else None
 
     return UserListResponse(users=users, next_cursor=next_cursor)
@@ -556,7 +597,28 @@ def list_pending_invites(
     has_more = len(docs) > page_limit
     page_docs = invited_docs[:page_limit]
 
-    invites = [_user_doc_to_response(d.to_dict()) for d in page_docs]
+    # Batch-resolve invited_by UIDs for the pending-invite page.
+    inviter_uids_pi = {
+        d.to_dict().get("invited_by")
+        for d in page_docs
+        if d.to_dict().get("invited_by")
+    }
+    inviter_names_pi: dict[str, str] = {}
+    for uid in inviter_uids_pi:
+        try:
+            inviter_doc = (
+                db.collection("tenants")
+                .document(tenant_id)
+                .collection("members")
+                .document(uid)
+                .get()
+            )
+            if inviter_doc.exists:
+                inviter_names_pi[uid] = inviter_doc.to_dict().get("name") or ""
+        except Exception:
+            pass
+
+    invites = [_user_doc_to_response(d.to_dict(), inviter_names_pi) for d in page_docs]
     next_cursor = page_docs[-1].id if (has_more and page_docs) else None
 
     return PendingInviteListResponse(invites=invites, next_cursor=next_cursor)
@@ -853,6 +915,68 @@ def request_password_reset(
 
     return ForgotPasswordResponse(message=_FORGOT_PASSWORD_MESSAGE)
 
+
+
+_RESET_PASSWORD_SUCCESS_MESSAGE = "Your password has been reset. You can now sign in."
+_INVALID_RESET_CODE_MSG = (
+    "This password reset link is invalid or has expired. Please request a new one."
+)
+_RESET_UNAVAILABLE_MSG = (
+    "We could not reset your password right now. Please try again shortly."
+)
+
+# Firebase error codes (substring match: Firebase appends detail text to some).
+_RESET_CODE_ERRORS = ("INVALID_OOB_CODE", "EXPIRED_OOB_CODE", "USER_DISABLED")
+_RESET_WEAK_PASSWORD_ERRORS = ("WEAK_PASSWORD", "PASSWORD_DOES_NOT_MEET_REQUIREMENTS")
+
+
+def reset_password(payload: ResetPasswordRequest) -> ResetPasswordResponse:
+    """Complete a password reset using the code from the emailed Firebase link.
+
+    Firebase validates and consumes the one-time code and sets the password.
+    Afterwards all of the user's refresh tokens are revoked so any session
+    that existed before the reset (for example a stolen one) stops working.
+
+    Neither the reset code nor the new password is ever logged.
+    """
+    try:
+        email = confirm_password_reset(payload.oob_code, payload.new_password)
+    except ValueError as error:
+        firebase_error = str(error)
+        if any(marker in firebase_error for marker in _RESET_CODE_ERRORS):
+            # Invalid, expired, already used, or disabled account: one generic
+            # answer so the endpoint reveals nothing about the account.
+            raise AppError("invalid_or_expired_code", _INVALID_RESET_CODE_MSG, 400)
+        if any(marker in firebase_error for marker in _RESET_WEAK_PASSWORD_ERRORS):
+            raise AppError(
+                "weak_password",
+                "This password does not meet the password requirements.",
+                400,
+            )
+        if "TOO_MANY_ATTEMPTS" in firebase_error:
+            raise AppError(
+                "too_many_attempts",
+                "Too many attempts. Please wait a moment and try again.",
+                429,
+            )
+        logger.warning("Password reset rejected by Firebase: %s", firebase_error)
+        raise AppError("reset_unavailable", _RESET_UNAVAILABLE_MSG, 502)
+    except Exception as error:
+        # Network failure or any other unexpected problem reaching Firebase.
+        logger.warning("Password reset unavailable: %s", type(error).__name__)
+        raise AppError("reset_unavailable", _RESET_UNAVAILABLE_MSG, 502) from error
+
+    # The password is already changed and the code consumed, so a failure here
+    # must not turn the response into an error. Log it for follow-up instead.
+    if email:
+        try:
+            user = auth.get_user_by_email(email)
+            auth.revoke_refresh_tokens(user.uid)
+            logger.info("Password reset completed: uid=%s", user.uid)
+        except Exception:
+            logger.exception("Sessions not revoked after a successful password reset")
+
+    return ResetPasswordResponse(message=_RESET_PASSWORD_SUCCESS_MESSAGE)
 
 # ---------------------------------------------------------------------------
 # /me

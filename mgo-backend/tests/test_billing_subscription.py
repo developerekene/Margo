@@ -8,13 +8,13 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.modules.billing.plans import PLANS, TRIAL_PLAN_ID
 from app.modules.billing.schemas import SubscriptionStatus, UsageSummary
 from app.shared.auth import get_current_user
+
 
 @pytest.fixture(autouse=True)
 def _stub_usage():

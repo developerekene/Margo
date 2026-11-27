@@ -114,19 +114,18 @@ def test_stripe_invalid_signature_returns_400():
     with patch(
         "app.modules.billing.api.settings.STRIPE_WEBHOOK_SECRET",
         STRIPE_SECRET,
+    ), patch(
+        "app.modules.billing.api.stripe.Webhook.construct_event",
+        side_effect=stripe.SignatureVerificationError(
+            "Bad signature",
+            FAKE_SIG,
+        ),
     ):
-        with patch(
-            "app.modules.billing.api.stripe.Webhook.construct_event",
-            side_effect=stripe.SignatureVerificationError(
-                "Bad signature",
-                FAKE_SIG,
-            ),
-        ):
-            client = TestClient(app)
-            resp = _stripe_post(
-                client,
-                _event("checkout.session.completed", {}),
-            )
+        client = TestClient(app)
+        resp = _stripe_post(
+            client,
+            _event("checkout.session.completed", {}),
+        )
 
     assert resp.status_code == 400
     assert resp.json()["error"]["message"] == "Invalid webhook signature."
@@ -149,17 +148,16 @@ def test_stripe_invalid_payload_returns_400():
     with patch(
         "app.modules.billing.api.settings.STRIPE_WEBHOOK_SECRET",
         STRIPE_SECRET,
+    ), patch(
+        "app.modules.billing.api.stripe.Webhook.construct_event",
+        side_effect=ValueError("Invalid payload"),
     ):
-        with patch(
-            "app.modules.billing.api.stripe.Webhook.construct_event",
-            side_effect=ValueError("Invalid payload"),
-        ):
-            client = TestClient(app)
-            resp = client.post(
-                STRIPE_WEBHOOK_URL,
-                content=b"not-json",
-                headers={"stripe-signature": FAKE_SIG},
-            )
+        client = TestClient(app)
+        resp = client.post(
+            STRIPE_WEBHOOK_URL,
+            content=b"not-json",
+            headers={"stripe-signature": FAKE_SIG},
+        )
 
     assert resp.status_code == 400
 
@@ -684,8 +682,8 @@ def test_invoice_payment_succeeded_records_invoice_and_renews_period():
 @patch("app.modules.billing.paystack_webhooks.verify_transaction")
 def test_paystack_charge_success_activates_subscription(mock_verify):
     """Verified Paystack charge activates the subscription."""
-    from app.modules.billing.schemas import SubscriptionStatus
     from app.modules.billing.paystack_webhooks import handle_charge_success
+    from app.modules.billing.schemas import SubscriptionStatus
 
     db, batch, ref = _subscription_db(
         {
@@ -721,12 +719,11 @@ def test_paystack_charge_success_activates_subscription(mock_verify):
     with patch(
         "app.modules.billing.paystack_webhooks.settings.PAYSTACK_PLAN_PROFESSIONAL",
         "professional_code",
+    ), patch(
+        "app.modules.billing.paystack_webhooks.settings.PAYSTACK_AMOUNT_PROFESSIONAL",
+        500000,
     ):
-        with patch(
-            "app.modules.billing.paystack_webhooks.settings.PAYSTACK_AMOUNT_PROFESSIONAL",
-            500000,
-        ):
-            handle_charge_success(db, batch, event)
+        handle_charge_success(db, batch, event)
 
     mock_verify.assert_called_once_with("ref_123")
     batch.update.assert_called_once()
