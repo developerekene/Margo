@@ -6,11 +6,11 @@ from datetime import UTC, datetime, timedelta
 from firebase_admin import auth
 
 from app.core.firebase import (
+    confirm_password_reset,
     get_firestore_client,
     init_firebase,
     send_email_verification,
     send_email_verification_via_custom_token,
-    confirm_password_reset,
     send_password_reset_email,
     sign_in_with_password,
 )

@@ -38,7 +38,6 @@ import re
 from urllib.parse import urlparse
 
 from app.core.responses import AppError
-from app.shared.container import get_db
 from app.modules.knowledge.constants import TENANTS_COLLECTION, WIDGETS_COLLECTION
 
 logger = logging.getLogger("margo")

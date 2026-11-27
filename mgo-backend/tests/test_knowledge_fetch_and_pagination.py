@@ -8,7 +8,7 @@ WI-4: SSRF hardening during the actual page fetch (redirect IP check,
 WI-5: Invalid/deleted cursor returns 400; cross-tenant safety is documented.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,11 +23,11 @@ from app.modules.knowledge.schemas import DocumentStatus, PageStatus
 
 
 def _utc() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
-def _seed_page(db, *, status=PageStatus.PENDING.value):
-    db.set(
+def _seed_page(db, *, status=PageStatus.QUEUED.value):
+    db.put(
         "tenants/t-1/crawl_jobs/job-1/pages/pg-1",
         {
             "page_id": "pg-1",
@@ -39,7 +39,7 @@ def _seed_page(db, *, status=PageStatus.PENDING.value):
             "updated_at": _utc(),
         },
     )
-    db.set(
+    db.put(
         "tenants/t-1/crawl_jobs/job-1",
         {
             "job_id": "job-1",
@@ -54,8 +54,8 @@ def _seed_page(db, *, status=PageStatus.PENDING.value):
     )
 
 
-def _seed_doc(db, *, status=DocumentStatus.PENDING.value):
-    db.set(
+def _seed_doc(db, *, status=DocumentStatus.QUEUED.value):
+    db.put(
         "tenants/t-1/documents/doc-1",
         {
             "document_id": "doc-1",
@@ -402,10 +402,11 @@ class TestPaginationCursorValidation:
 
     def _seed_docs(self, db, tenant_id: str, count: int = 3):
         for i in range(count):
-            db.set(
-                f"tenants/{tenant_id}/documents/doc-{i}",
+            doc_id = f"{tenant_id}-doc-{i}"
+            db.put(
+                f"tenants/{tenant_id}/documents/{doc_id}",
                 {
-                    "document_id": f"doc-{i}",
+                    "document_id": doc_id,
                     "tenant_id": tenant_id,
                     "filename": f"file-{i}.pdf",
                     "source_type": "pdf",
@@ -426,7 +427,7 @@ class TestPaginationCursorValidation:
             service.list_documents("t-1", cursor="doc-does-not-exist")
 
         assert exc_info.value.status_code == 400
-        assert "cursor" in exc_info.value.error_code.lower() or "cursor" in exc_info.value.message.lower()
+        assert exc_info.value.code == "invalid_cursor"
 
     def test_valid_cursor_paginates_correctly(self, fake_db):
         """A valid cursor returns the next page without error."""

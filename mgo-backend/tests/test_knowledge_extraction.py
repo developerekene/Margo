@@ -4,7 +4,6 @@ No network calls. PDF tests mock pypdf; HTML tests use real bs4/lxml with
 small inline HTML strings. Markdown tests use stdlib only.
 """
 
-import io
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,7 +14,6 @@ from app.modules.knowledge.extractor import (
     extract_markdown,
     extract_pdf,
 )
-
 
 # ---------------------------------------------------------------------------
 # HTML extraction

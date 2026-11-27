@@ -7,15 +7,13 @@ Verifies:
 - Missing document → 404.
 """
 
-from unittest.mock import patch, call
+from unittest.mock import patch
 
 import pytest
 
 from app.core.responses import AppError
 from app.modules.knowledge import service
 from app.modules.knowledge.schemas import DocumentStatus, SourceType
-from tests.fake_firestore import FakeDB
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -59,10 +57,9 @@ class TestDeleteDocument:
         with patch(
             "app.modules.knowledge.service.gcs.delete_file",
             side_effect=AppError("storage_delete_failed", "GCS error", 503),
-        ):
-            with patch("app.modules.knowledge.service.publish") as mock_publish:
-                with pytest.raises(AppError) as exc_info:
-                    service.delete_document("t-1", "doc-1")
+        ), patch("app.modules.knowledge.service.publish") as mock_publish:
+            with pytest.raises(AppError) as exc_info:
+                service.delete_document("t-1", "doc-1")
 
         # 503 raised to the caller.
         assert exc_info.value.status_code == 503

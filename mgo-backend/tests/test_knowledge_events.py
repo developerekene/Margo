@@ -7,14 +7,13 @@ Verifies:
   - Failed extractions do NOT publish events
 """
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.core.responses import AppError
 from app.modules.knowledge import service
-from app.modules.knowledge.schemas import DocumentStatus, PageStatus, SourceType
-from tests.fake_firestore import FakeDB
-
+from app.modules.knowledge.schemas import DocumentStatus, PageStatus
 
 # ---------------------------------------------------------------------------
 # Shared seeding helpers
@@ -98,6 +97,8 @@ class TestPageExtractedEvent:
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.content = b"<html><body><p>content</p></body></html>"
+        mock_response.url = "https://example.com"
+        mock_response.headers = {"content-type": "text/html"}
 
         with (
             patch("httpx.get", return_value=mock_response),
@@ -128,9 +129,11 @@ class TestPageExtractedEvent:
             ),
             patch("app.modules.knowledge.service.publish") as mock_publish,
         ):
-            service.process_page("t-1", "job-1", "pg-1", "https://example.com")
+            with pytest.raises(AppError) as exc_info:
+                service.process_page("t-1", "job-1", "pg-1", "https://example.com")
 
-        mock_publish.assert_not_called()
+            assert exc_info.value.status_code == 503
+            mock_publish.assert_not_called()
 
     def test_page_extracted_not_published_on_extraction_failure(self, fake_db):
         _seed_page(fake_db)

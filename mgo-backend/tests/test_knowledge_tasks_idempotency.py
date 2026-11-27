@@ -7,13 +7,10 @@ Verifies:
 - process_document: tenant_id mismatch in payload → no-op (cross-tenant task rejected).
 """
 
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import patch
 
 from app.modules.knowledge import service
 from app.modules.knowledge.schemas import DocumentStatus, PageStatus, SourceType
-
 
 # ---------------------------------------------------------------------------
 # Helpers

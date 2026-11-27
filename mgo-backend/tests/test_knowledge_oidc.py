@@ -10,7 +10,6 @@ import pytest
 
 from app.modules.knowledge.oidc import OIDCVerificationError, verify_cloud_tasks_token
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -80,10 +79,9 @@ def test_raises_when_google_auth_raises(monkeypatch):
             patch(
                 "google.oauth2.id_token.verify_oauth2_token",
                 side_effect=ValueError("token expired"),
-            ),
+            ),pytest.raises(OIDCVerificationError, match="Token verification failed")
         ):
-            with pytest.raises(OIDCVerificationError, match="Token verification failed"):
-                verify_cloud_tasks_token("bad.token")
+            verify_cloud_tasks_token("bad.token")
 
 
 def test_raises_on_wrong_email():
@@ -97,10 +95,9 @@ def test_raises_on_wrong_email():
             patch(
                 "google.oauth2.id_token.verify_oauth2_token",
                 return_value=wrong_claims,
-            ),
+            ),pytest.raises(OIDCVerificationError, match="email")
         ):
-            with pytest.raises(OIDCVerificationError, match="email"):
-                verify_cloud_tasks_token("some.token")
+            verify_cloud_tasks_token("some.token")
 
 
 def test_raises_when_email_verified_false():
@@ -114,10 +111,9 @@ def test_raises_when_email_verified_false():
             patch(
                 "google.oauth2.id_token.verify_oauth2_token",
                 return_value=unverified_claims,
-            ),
+            ),pytest.raises(OIDCVerificationError, match="email_verified")
         ):
-            with pytest.raises(OIDCVerificationError, match="email_verified"):
-                verify_cloud_tasks_token("some.token")
+            verify_cloud_tasks_token("some.token")
 
 
 # ---------------------------------------------------------------------------

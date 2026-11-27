@@ -12,7 +12,6 @@ Currently subscribed events:
   None yet — knowledge is a publisher, not a subscriber.
 """
 
-from app.shared.event_bus import subscribe
 
 
 def register_handlers() -> None:
@@ -24,4 +23,3 @@ def register_handlers() -> None:
     can be added here without touching main.py.
     """
     # Future: subscribe("EmbeddingCompleted", _on_embedding_completed)
-    pass

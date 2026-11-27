@@ -94,6 +94,7 @@ def extract_pdf(pdf_bytes: bytes) -> tuple[str, str]:
 
     try:
         import io
+
         from pypdf import PdfReader
         from pypdf.errors import PdfReadError
     except ImportError as exc:

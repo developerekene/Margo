@@ -11,8 +11,8 @@ Covers:
 GCS and Cloud Tasks are mocked; billing ports are mocked; Firestore uses FakeDB.
 """
 
-from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, call, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -24,8 +24,6 @@ from app.modules.knowledge.schemas import (
     PageStatus,
     SourceType,
 )
-from tests.fake_firestore import FakeDB, subscription_doc
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -83,9 +81,8 @@ class TestCreateCrawlJob:
         with patch(
             "app.modules.knowledge.service.billing_ports.is_subscription_active",
             return_value=False,
-        ):
-            with pytest.raises(AppError) as exc_info:
-                service.create_crawl_job("t-1", "https://example.com")
+        ), pytest.raises(AppError) as exc_info:
+            service.create_crawl_job("t-1", "https://example.com")
         assert exc_info.value.status_code == 403
         assert exc_info.value.code == "subscription_required"
 
@@ -94,9 +91,8 @@ class TestCreateCrawlJob:
         with patch(
             "app.modules.knowledge.service.billing_ports.is_subscription_active",
             return_value=True,
-        ):
-            with pytest.raises(AppError) as exc_info:
-                service.create_crawl_job("t-1", "ftp://bad-scheme.com")
+        ), pytest.raises(AppError) as exc_info:
+            service.create_crawl_job("t-1", "ftp://bad-scheme.com")
         assert exc_info.value.status_code == 400
 
     def test_raises_403_on_domain_not_allowed(self, db):
@@ -104,9 +100,8 @@ class TestCreateCrawlJob:
         with patch(
             "app.modules.knowledge.service.billing_ports.is_subscription_active",
             return_value=True,
-        ):
-            with pytest.raises(AppError) as exc_info:
-                service.create_crawl_job("t-1", "https://notallowed.com")
+        ), pytest.raises(AppError) as exc_info:
+            service.create_crawl_job("t-1", "https://notallowed.com")
         assert exc_info.value.status_code == 403
         assert exc_info.value.code == "domain_not_allowed"
 
@@ -120,10 +115,9 @@ class TestCreateCrawlJob:
             patch(
                 "app.modules.knowledge.service.discover_pages",
                 return_value=[],
-            ),
+            ),pytest.raises(AppError) as exc_info
         ):
-            with pytest.raises(AppError) as exc_info:
-                service.create_crawl_job("t-1", "https://example.com")
+            service.create_crawl_job("t-1", "https://example.com")
         assert exc_info.value.status_code == 400
         assert exc_info.value.code == "no_pages_discovered"
 
@@ -146,10 +140,9 @@ class TestCreateCrawlJob:
             patch(
                 "app.modules.knowledge.service.billing_ports.reserve_usage",
                 return_value=False,
-            ),
+            ),pytest.raises(AppError) as exc_info
         ):
-            with pytest.raises(AppError) as exc_info:
-                service.create_crawl_job("t-1", "https://example.com")
+            service.create_crawl_job("t-1", "https://example.com")
         assert exc_info.value.status_code == 403
         assert exc_info.value.code == "crawl_pages_limit_reached"
 
@@ -273,9 +266,8 @@ class TestUploadDocument:
         with patch(
             "app.modules.knowledge.service.billing_ports.is_subscription_active",
             return_value=False,
-        ):
-            with pytest.raises(AppError) as exc_info:
-                service.upload_document("t-1", "file.pdf", SourceType.PDF, VALID_PDF)
+        ), pytest.raises(AppError) as exc_info:
+            service.upload_document("t-1", "file.pdf", SourceType.PDF, VALID_PDF)
         assert exc_info.value.status_code == 403
         assert exc_info.value.code == "subscription_required"
 
@@ -288,10 +280,9 @@ class TestUploadDocument:
             patch(
                 "app.modules.knowledge.service.billing_ports.is_within_plan_limit",
                 return_value=False,
-            ),
+            ),pytest.raises(AppError) as exc_info
         ):
-            with pytest.raises(AppError) as exc_info:
-                service.upload_document("t-1", "file.pdf", SourceType.PDF, VALID_PDF)
+            service.upload_document("t-1", "file.pdf", SourceType.PDF, VALID_PDF)
         assert exc_info.value.status_code == 403
         assert exc_info.value.code == "document_limit_reached"
 
@@ -332,10 +323,9 @@ class TestUploadDocument:
             patch(
                 "app.modules.knowledge.service.gcs.upload_file",
                 side_effect=AppError("storage_upload_failed", "GCS failed", 503),
-            ),
+            ),pytest.raises(AppError) as exc_info
         ):
-            with pytest.raises(AppError) as exc_info:
-                service.upload_document("t-1", "doc.pdf", SourceType.PDF, VALID_PDF)
+            service.upload_document("t-1", "doc.pdf", SourceType.PDF, VALID_PDF)
         assert exc_info.value.status_code == 503
 
     def test_task_enqueue_failure_rolls_back_gcs_and_firestore(self, db):
@@ -356,10 +346,9 @@ class TestUploadDocument:
             patch(
                 "app.modules.knowledge.service.cloud_tasks.enqueue_document_task",
                 side_effect=AppError("task_enqueue_failed", "failed", 503),
-            ),
+            ),pytest.raises(AppError) as exc_info
         ):
-            with pytest.raises(AppError) as exc_info:
-                service.upload_document("t-1", "doc.pdf", SourceType.PDF, VALID_PDF)
+            service.upload_document("t-1", "doc.pdf", SourceType.PDF, VALID_PDF)
 
         assert exc_info.value.status_code == 503
         # GCS delete was called as rollback
@@ -489,9 +478,8 @@ class TestDeleteDocument:
         with patch(
             "app.modules.knowledge.service.gcs.delete_file",
             side_effect=AppError("storage_delete_failed", "oops", 503),
-        ):
-            with pytest.raises(AppError) as exc_info:
-                service.delete_document("t-1", "doc-1")
+        ), pytest.raises(AppError) as exc_info:
+            service.delete_document("t-1", "doc-1")
 
         # Firestore record must still exist — the deletion was aborted.
         assert db.doc("tenants/t-1/documents/doc-1") is not None

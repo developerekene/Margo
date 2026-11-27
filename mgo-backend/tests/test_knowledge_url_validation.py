@@ -15,7 +15,6 @@ from app.modules.knowledge.url_validation import (
 )
 from tests.fake_firestore import FakeDB
 
-
 # ---------------------------------------------------------------------------
 # normalise_host
 # ---------------------------------------------------------------------------

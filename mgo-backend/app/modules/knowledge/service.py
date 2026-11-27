@@ -533,9 +533,11 @@ def process_page(tenant_id: str, job_id: str, page_id: str, url: str) -> None:
     # re-checked against private IP ranges so a redirect to 169.254.x.x cannot
     # bypass the initial URL validation.
     try:
-        import httpx as _httpx
-        from app.modules.knowledge.url_validation import is_private_ip as _is_private_ip
         from urllib.parse import urlparse as _urlparse
+
+        import httpx as _httpx
+
+        from app.modules.knowledge.url_validation import is_private_ip as _is_private_ip
 
         response = _httpx.get(
             url,

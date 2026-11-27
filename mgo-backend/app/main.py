@@ -19,7 +19,9 @@ from app.core.responses import (
     validation_exception_handler,
 )
 from app.modules.billing.events import register_handlers as register_billing_handlers
-from app.modules.knowledge.events import register_handlers as register_knowledge_handlers
+from app.modules.knowledge.events import (
+    register_handlers as register_knowledge_handlers,
+)
 from app.router import api_router
 from app.shared import container
 

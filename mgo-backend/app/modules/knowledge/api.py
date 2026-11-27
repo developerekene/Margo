@@ -12,7 +12,6 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, UploadFile
-from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.responses import AppError, envelope

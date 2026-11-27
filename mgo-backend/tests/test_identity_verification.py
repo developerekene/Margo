@@ -7,11 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.core.responses import AppError
 from app.modules.identity import service
 from app.modules.identity.ports import verify_token
 from app.modules.identity.schemas import ResendVerificationRequest
-
 
 # ---------------------------------------------------------------------------
 # verify_token — email_verified enforcement

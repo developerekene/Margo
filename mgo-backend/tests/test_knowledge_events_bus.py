@@ -11,8 +11,7 @@ Verifies:
 
 import pytest
 
-from app.shared.event_bus import subscribe, publish, _subscribers
-
+from app.shared.event_bus import _subscribers, publish, subscribe
 
 # ---------------------------------------------------------------------------
 # Fixtures

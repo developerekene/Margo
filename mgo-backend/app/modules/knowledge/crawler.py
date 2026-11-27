@@ -35,7 +35,6 @@ from urllib.parse import urljoin, urlparse, urlunparse
 import httpx
 
 from app.core.config import settings
-from app.modules.knowledge.url_validation import is_private_ip
 
 logger = logging.getLogger("margo")
 

@@ -8,13 +8,15 @@ Verifies:
 - PDF with some empty pages extracts content from the non-empty ones.
 """
 
-import io
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.modules.knowledge.extractor import extract_markdown, extract_pdf, _strip_markdown
-
+from app.modules.knowledge.extractor import (
+    _strip_markdown,
+    extract_markdown,
+    extract_pdf,
+)
 
 # ---------------------------------------------------------------------------
 # _strip_markdown — image/link order

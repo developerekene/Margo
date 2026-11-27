@@ -10,13 +10,9 @@ Verifies:
 """
 
 from datetime import UTC, datetime
-from unittest.mock import patch, MagicMock, call
-
-import pytest
+from unittest.mock import patch
 
 from app.modules.identity import service as identity_service
-from tests.fake_firestore import FakeDB
-
 
 # ---------------------------------------------------------------------------
 # Helpers
